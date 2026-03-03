@@ -1,0 +1,9 @@
+{
+  "name": "Healthy.hub",
+  "description": "The Ultimate Luxury Fitness Companion. AI-powered food tracking, precise activity metrics, and intelligent BMI analysis in a premium true-black interface.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
