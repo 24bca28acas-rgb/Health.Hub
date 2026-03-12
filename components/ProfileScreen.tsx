@@ -1,12 +1,13 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Mail, Weight, Ruler, Calendar, Activity, LogOut, Edit3, Save, X, Camera, Loader2, AlertCircle, CheckCircle, Trash2, AlertTriangle, ChevronRight } from 'lucide-react';
+import { User, Mail, Weight, Ruler, Calendar, Activity, LogOut, Edit3, Save, X, Camera, Loader2, AlertCircle, CheckCircle, Trash2, AlertTriangle, ChevronRight, RefreshCw } from 'lucide-react';
 import { UserProfile, UserMetrics } from '../types';
 import { signOut, updateProfile, updateUserMetrics, supabase, DEFAULT_AVATAR } from '../services/supabase';
 
 interface ProfileScreenProps {
   onUpdateMetrics: (metrics: UserMetrics) => void;
+  onUpdateProfile?: (profile: UserProfile) => void;
 }
 
 interface SnackBarState {
@@ -15,7 +16,7 @@ interface SnackBarState {
     type: 'success' | 'error';
 }
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdateProfile }) => {
   // --- REAL DATA STATE ---
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -121,18 +122,29 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics }) => {
         age: calculateAge(tempMetrics.dob) 
       };
 
-      await updateProfile(user, { displayName: tempName, photoURL: tempAvatar });
-      await updateUserMetrics(user.id, updatedMetrics);
-      await supabase.from('profiles').update({ 
-        goals: tempGoals, 
-        daily_step_goal: tempGoals.stepGoal 
-      }).eq('id', user.id);
+      // Consolidated call with extreme debugging enabled in service
+      await updateProfile(user, { 
+        displayName: tempName, 
+        photoURL: tempAvatar,
+        metrics: updatedMetrics,
+        goals: tempGoals
+      });
       
       onUpdateMetrics(updatedMetrics);
+      if (onUpdateProfile) {
+        onUpdateProfile({
+          ...profile,
+          name: tempName,
+          avatarUrl: tempAvatar,
+          metrics: updatedMetrics,
+          goals: tempGoals
+        });
+      }
       setSnackBar({ show: true, message: "Identity records synchronized.", type: 'success' });
       setIsEditing(false);
       await fetchProfileData(); // Refresh UI with fresh DB data
     } catch (e: any) {
+      console.error("Save Error:", e);
       setSnackBar({ show: true, message: "Failed to update record.", type: 'error' });
     } finally {
       setIsSaving(false);
@@ -307,6 +319,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics }) => {
         <div className="mt-8 space-y-3">
            <p className="text-[9px] font-black text-gray-600 uppercase tracking-[0.4em] px-4 mb-2">System Controls</p>
            
+           <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-5 px-6 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between group hover:bg-white/10 transition-all">
+              <div className="flex items-center gap-3">
+                 <RefreshCw size={16} className="text-gray-400 group-hover:text-white" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-white/80">Clear Local Cache</span>
+              </div>
+              <ChevronRight size={14} className="text-gray-700" />
+           </button>
+
            <button onClick={handleSignOut} className="w-full py-5 px-6 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between group hover:bg-white/10 transition-all">
               <div className="flex items-center gap-3">
                  <LogOut size={16} className="text-gray-400 group-hover:text-white" />

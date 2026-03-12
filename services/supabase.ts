@@ -4,57 +4,157 @@ import { ActivityData, UserMetrics, UserProfile, DailyActivityDB, FoodLogDB, Cha
 
 export type { User } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://tngzcpgoshpfwuarskul.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_OyoWs8f9j8fNI9Y4YbPilg_tFtAQUNX';
-const PROJECT_ID = 'tngzcpgoshpfwuarskul';
+console.log("Supabase URL Status: ", !!import.meta.env.VITE_SUPABASE_URL);
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://tngzcpgoshpfwuarskul.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuZ3pjcGdvc2hwZnd1YXJza3VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0NjY5NTksImV4cCI6MjA4NjA0Mjk1OX0.OKH4nWdTFa7OZ6NoAfAeuD6HFlJGvmJ-aYfdZ3rpBp4';
+const PROJECT_ID = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'tngzcpgoshpfwuarskul';
 
 export const performMaintenance = (force: boolean = false) => {
   try {
     const currentAuthKey = `sb-${PROJECT_ID}-auth-token`;
     const keys = Object.keys(localStorage);
+    
+    // Always clear old project tokens
     keys.forEach(key => {
       if (key.startsWith('sb-') && !key.includes(PROJECT_ID)) {
         localStorage.removeItem(key);
       }
     });
+
     if (force) {
-        const heavyKeys = ['food_history', 'chat_history', 'workout_lab_cache', 'bmi_metrics', 'app_state', 'streak_data'];
-        heavyKeys.forEach(k => {
-          if (k !== currentAuthKey) localStorage.removeItem(k);
+        // Clear non-essential application state
+        const nonEssentialKeys = [
+          'food_history', 
+          'chat_history', 
+          'workout_lab_cache', 
+          'bmi_metrics', 
+          'app_state', 
+          'streak_data',
+          'ai_thinking_mode',
+          'adaptive_goals_enabled',
+          'hydration_reminders_enabled'
+        ];
+        
+        nonEssentialKeys.forEach(k => {
+          if (k !== currentAuthKey) {
+            localStorage.removeItem(k);
+          }
         });
+
+        // If still forced and needed, we can clear everything except auth
+        // but let's stick to these for now.
         return;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn("Maintenance failed", e);
+  }
 };
 
+const memoryStorage = new Map<string, string>();
+
+// Helper to check if localStorage is actually usable (not 0 quota or disabled)
+const checkStorageHealth = (): boolean => {
+  try {
+    const testKey = '__health_check__';
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+let isLocalStorageAvailable = checkStorageHealth();
+
 const adaptiveStorage: SupportedStorage = {
-  getItem: (key) => { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  getItem: (key) => {
+    if (!isLocalStorageAvailable) return memoryStorage.get(key) ?? null;
+    try {
+      return localStorage.getItem(key) ?? memoryStorage.get(key) ?? null;
+    } catch (e) {
+      return memoryStorage.get(key) ?? null;
+    }
+  },
   setItem: (key, value) => {
-    try { localStorage.setItem(key, value); } catch (e: any) {
-      if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
-        performMaintenance(true); 
-        try { localStorage.setItem(key, value); } catch (retryError) {
-          localStorage.clear(); 
-          try { localStorage.setItem(key, value); } catch (finalError) {
-            throw finalError;
+    if (!isLocalStorageAvailable) {
+      memoryStorage.set(key, value);
+      return;
+    }
+
+    try {
+      localStorage.setItem(key, value);
+    } catch (e: any) {
+      const isQuotaError = e.name === 'QuotaExceededError' || e.message?.toLowerCase().includes('quota');
+      
+      if (isQuotaError) {
+        // Only attempt maintenance if we think storage is actually functional
+        console.warn(`[Storage] Quota exceeded for "${key}". Attempting cleanup...`);
+        performMaintenance(true);
+        
+        try {
+          localStorage.setItem(key, value);
+        } catch (retryError) {
+          // If it still fails, check if storage is even functional anymore
+          isLocalStorageAvailable = checkStorageHealth();
+          
+          if (!isLocalStorageAvailable) {
+            console.warn("[Storage] LocalStorage appears disabled or zero-quota. Switching to memory fallback.");
+            memoryStorage.set(key, value);
+          } else {
+            // Destructive fallback only if storage is functional but still full
+            try {
+              // Instead of full clear, let's be more surgical to avoid logging out if possible
+              const currentAuthKey = `sb-${PROJECT_ID}-auth-token`;
+              Object.keys(localStorage).forEach(k => {
+                if (k !== currentAuthKey) localStorage.removeItem(k);
+              });
+              localStorage.setItem(key, value);
+            } catch (finalError) {
+              memoryStorage.set(key, value);
+            }
           }
         }
       } else {
-        throw e;
+        // Non-quota error (SecurityError, etc) - likely disabled
+        isLocalStorageAvailable = false;
+        memoryStorage.set(key, value);
       }
     }
   },
-  removeItem: (key) => { try { localStorage.removeItem(key); } catch (e) {} }
+  removeItem: (key) => {
+    if (isLocalStorageAvailable) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+    }
+    memoryStorage.delete(key);
+  }
 };
 
 // CRITICAL: Web-Specific Configuration for No-Router Environment
 // Prevent multiple GoTrueClient instances during HMR
+const authStorageKey = `sb-${PROJECT_ID}-auth-token`;
+
+// Emergency cleanup for bloated JWTs (e.g. base64 images saved in user_metadata)
+try {
+  const existingToken = localStorage.getItem(authStorageKey);
+  // Nginx default header limit is 8KB. A normal JWT is ~1.5KB.
+  // If the token is > 6000 chars, it will likely cause a 431 Request Header Fields Too Large error (Failed to fetch).
+  if (existingToken && existingToken.length > 6000) { 
+    console.warn("[Storage] Detected bloated auth token. Clearing to prevent 'Failed to fetch' and quota errors.");
+    localStorage.removeItem(authStorageKey);
+  }
+} catch (e) {
+  // Ignore
+}
+
 export const supabase = (window as any)._supabaseClient || createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { 
     persistSession: true, 
     autoRefreshToken: true,
     detectSessionInUrl: false, // Prevents URL manipulation which causes 404s in preview
-    storageKey: `sb-${PROJECT_ID}-auth-token`, 
+    storageKey: authStorageKey, 
     storage: adaptiveStorage 
   }
 });
@@ -79,6 +179,17 @@ export const getYesterdayKey = (): string => {
 export const isGuest = (userId: string | undefined): boolean => {
   if (!userId) return false;
   return userId.startsWith('guest_') || localStorage.getItem('healthy_hub_guest_session') === 'true';
+};
+
+export const checkConnection = async () => {
+  try {
+    const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("Supabase Connection Check Failed:", e);
+    return false;
+  }
 };
 
 // --- BIOMETRIC & STREAK SYNC ENGINE ---
@@ -301,6 +412,12 @@ export const signInAsGuest = () => {
 export const signInWithEmailAndPassword = async (email: string, psw: string) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password: psw });
   if (error) throw error;
+  
+  if (data.session?.access_token && data.session.access_token.length > 4000) {
+    await supabase.auth.signOut({ scope: 'local' });
+    throw new Error("Account corrupted: Avatar data too large. Please create a new account.");
+  }
+  
   return data;
 };
 
@@ -319,13 +436,119 @@ export const createUserDocument = async (user: User, name: string) => {
   await supabase.from('profiles').upsert({ id: user.id, email: user.email, name, avatar_url: DEFAULT_AVATAR });
 };
 
-export const updateProfile = async (user: User, profile: { displayName?: string, photoURL?: string }) => {
-  await supabase.auth.updateUser({ data: { full_name: profile.displayName, avatar_url: profile.photoURL } });
-  const updateData: any = {};
-  if (profile.displayName) updateData.name = profile.displayName;
-  if (profile.photoURL) updateData.avatar_url = profile.photoURL;
-  if (Object.keys(updateData).length > 0) {
-    await supabase.from('profiles').update(updateData).eq('id', user.id);
+export const updateProfile = async (user: User, profile: { displayName?: string, photoURL?: string, metrics?: UserMetrics, goals?: any }) => {
+  if (isGuest(user.id)) return;
+
+  console.log("--- EXTREME DEBUG: START PROFILE SAVE ---");
+  console.log(`Target User ID: ${user.id}`);
+  
+  // 1. Check Session
+  const { data: { session } } = await supabase.auth.getSession();
+  console.log(`Access Token Active: ${!!session?.access_token}`);
+
+  // 1.5 Check Connection
+  const isConnected = await checkConnection();
+  if (!isConnected) throw new Error("Network Error: Cannot reach database. Check your connection.");
+
+  try {
+    // 2. Prepare Payload Map with Strict Typing
+    const payload: Record<string, any> = {};
+    
+    // Name & Avatar
+    if (profile.displayName) payload.name = String(profile.displayName).trim();
+    if (profile.photoURL) payload.avatar_url = String(profile.photoURL).trim();
+
+    // Metrics & DOB Handling
+    if (profile.metrics) {
+      const metrics = profile.metrics;
+      
+      // STRICT DOB HANDLING: Ensure YYYY-MM-DD string
+      let dobString = null;
+      if (metrics.dob) {
+        if ((metrics.dob as any) instanceof Date) {
+           dobString = (metrics.dob as any).toISOString().split('T')[0];
+        } else if (typeof metrics.dob === 'string') {
+           // Verify format or substring
+           dobString = metrics.dob.substring(0, 10); 
+        }
+      }
+
+      // Construct metrics JSONB
+      const safeMetrics = {
+        height: Number(metrics.height) || 0,
+        weight: Number(metrics.weight) || 0,
+        age: Number(metrics.age) || 0,
+        gender: String(metrics.gender || 'Other'),
+        activityLevel: String(metrics.activityLevel || 'Sedentary'),
+        fitnessGoal: String(metrics.fitnessGoal || 'Maintain'),
+        dob: dobString
+      };
+
+      payload.metrics = safeMetrics;
+      payload.weight = safeMetrics.weight; // Top-level column sync
+      payload.height = safeMetrics.height; // Top-level column sync
+    }
+
+    // Goals Handling
+    if (profile.goals) {
+      const safeGoals = {
+        stepGoal: Number(profile.goals.stepGoal) || 10000,
+        calorieGoal: Number(profile.goals.calorieGoal) || 2000,
+        distanceGoal: Number(profile.goals.distanceGoal) || 5.0,
+        proteinGoal: Number(profile.goals.proteinGoal) || 150
+      };
+      payload.goals = safeGoals;
+      payload.daily_step_goal = safeGoals.stepGoal;       // Top-level column sync
+      payload.daily_calorie_goal = safeGoals.calorieGoal; // Top-level column sync
+      payload.target_steps = safeGoals.stepGoal;          // Legacy column sync
+      payload.target_calories = safeGoals.calorieGoal;    // Legacy column sync
+    }
+
+    payload.updated_at = new Date().toISOString();
+
+    // 3. Deep Logging of Payload
+    console.log("--- PAYLOAD AUDIT ---");
+    Object.keys(payload).forEach(key => {
+      console.log(`Key: ${key}, Value: ${payload[key]}, Type: ${typeof payload[key]}`);
+    });
+
+    // 4. Update Auth Metadata (Separate Call)
+    if (profile.displayName) {
+       const { error: authError } = await supabase.auth.updateUser({ 
+         data: { 
+           full_name: profile.displayName
+         } 
+       });
+       if (authError) console.error("Auth Metadata Update Warning:", authError);
+    }
+
+    // 5. Execute Database Update
+    if (Object.keys(payload).length > 0) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', user.id)
+        .select();
+
+      if (error) {
+        console.error("--- SUPABASE DB ERROR ---");
+        console.error(`Code: ${error.code}`);
+        console.error(`Message: ${error.message}`);
+        console.error(`Details: ${error.details}`);
+        throw error;
+      }
+      
+      console.log("--- SAVE SUCCESSFUL ---");
+      console.log("Response Data:", data);
+    }
+
+  } catch (e: any) {
+    console.error("--- CRITICAL SAVE FAILURE ---");
+    console.error("Error Object:", e);
+    if (e.stack) {
+      console.error("Stack Trace:", e.stack);
+    }
+    throw e;
   }
 };
 
@@ -346,6 +569,21 @@ export const saveChatMessage = async (userId: string, message: string, isUserMes
 
 export const clearChatHistory = async (userId: string) => {
   await supabase.from('chat_history').delete().eq('user_id', userId);
+};
+
+export const sanitizeUserMetadata = async (user: User) => {
+  if (user.user_metadata?.avatar_url && user.user_metadata.avatar_url.startsWith('data:image')) {
+    console.log("Sanitizing bloated user_metadata...");
+    const { error } = await supabase.auth.updateUser({
+      data: { avatar_url: null }
+    });
+    if (error) {
+      console.error("Failed to sanitize user_metadata:", error);
+      // If we can't sanitize it, the account is permanently corrupted
+      await supabase.auth.signOut({ scope: 'local' });
+      throw new Error("Account corrupted: Avatar data too large. Please create a new account.");
+    }
+  }
 };
 
 export const updateUserMetrics = async (userId: string, metrics: UserMetrics) => {
@@ -377,6 +615,92 @@ export const saveWorkout = async (userId: string, plan: WorkoutPlan) => {
 
 export const deleteWorkout = async (id: string) => {
   await supabase.from('saved_workouts').delete().eq('id', id);
+};
+
+// --- ACTIVITY LOGGING ---
+
+export const logActivity = async (userId: string, activity: { activity_type: string, duration_minutes: number, intensity: string, calories_burned: number, notes?: string }) => {
+  if (isGuest(userId)) return;
+  
+  try {
+    // 0. Check connection first
+    const isConnected = await checkConnection();
+    if (!isConnected) throw new Error("Network Error: Cannot reach database.");
+
+    // 1. Log the individual session
+    const { error } = await supabase.from('activity_logs').insert({
+      user_id: userId,
+      ...activity,
+      created_at: new Date().toISOString()
+    });
+    
+    if (error) {
+      // If table doesn't exist, we just log error and proceed to update daily totals
+      console.warn("Activity Log Table Error (might be missing):", error);
+    }
+
+    // 2. Update Daily Totals
+    const todayKey = getLocalTodayKey();
+    
+    // Fetch current daily activity to increment
+    const { data: currentDaily } = await supabase
+      .from('daily_activity')
+      .select('calories_burned, steps, distance_km')
+      .eq('user_id', userId)
+      .eq('activity_date', todayKey)
+      .maybeSingle();
+
+    const currentCalories = currentDaily?.calories_burned || 0;
+    const newCalories = currentCalories + activity.calories_burned;
+    
+    // Upsert daily activity
+    // We need to be careful not to overwrite other fields if we are just creating it
+    const upsertPayload: any = {
+      user_id: userId,
+      activity_date: todayKey,
+      calories_burned: newCalories,
+      updated_at: new Date().toISOString()
+    };
+
+    // If record exists, we just update calories. If not, we set defaults.
+    if (!currentDaily) {
+        upsertPayload.steps = 0;
+        upsertPayload.distance_km = 0;
+        upsertPayload.is_target_met = false;
+    }
+
+    if (currentDaily) {
+        const { error: updateError } = await supabase.from('daily_activity').update({ 
+            calories_burned: newCalories,
+            updated_at: new Date().toISOString()
+        }).eq('user_id', userId).eq('activity_date', todayKey);
+        
+        if (updateError) throw updateError;
+    } else {
+        const { error: insertError } = await supabase.from('daily_activity').insert(upsertPayload);
+        if (insertError) throw insertError;
+    }
+  } catch (e: any) {
+    console.error("Log Activity Failed:", e);
+    throw e; // Re-throw for UI to handle
+  }
+};
+
+export const fetchActivityLogs = async (userId: string) => {
+  if (isGuest(userId)) return [];
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+    
+  if (error) {
+      if (error.code === '42P01') return []; // Table missing
+      console.error("Fetch Activity Logs Error:", error);
+      return [];
+  }
+  return data || [];
 };
 
 export const submitAiFeedback = async (imageUrl: string, prediction: string, feedback: string) => {

@@ -23,12 +23,31 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
     try {
       const valueToStore = value instanceof Function ? value(storedValue) : value;
       
+      // CRITICAL: Always update React state first so the UI doesn't break
+      setStoredValue(valueToStore);
+      
       if (typeof window !== 'undefined') {
+        // Quick health check to avoid repeated failures if storage is known to be broken
+        const isFunctional = () => {
+          try {
+            const k = '__test__';
+            window.localStorage.setItem(k, k);
+            window.localStorage.removeItem(k);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        };
+
+        if (!isFunctional()) {
+          console.warn(`[useLocalStorage] Storage disabled or zero-quota. Key "${key}" will be memory-only.`);
+          return;
+        }
+
         try {
           window.localStorage.setItem(key, JSON.stringify(valueToStore));
-          setStoredValue(valueToStore);
         } catch (error: any) {
-          if (error.name === 'QuotaExceededError' || error.message.includes('quota')) {
+          if (error.name === 'QuotaExceededError' || error.message?.toLowerCase().includes('quota')) {
             console.error(`[useLocalStorage] Quota Exceeded for key "${key}". Triggering emergency cleanup.`);
             
             // Try to clear non-essential space first
@@ -37,12 +56,11 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
             // Retry the set operation once
             try {
               window.localStorage.setItem(key, JSON.stringify(valueToStore));
-              setStoredValue(valueToStore);
             } catch (retryError) {
-              console.error(`[useLocalStorage] Retry failed. Critical storage failure for key "${key}".`);
+              console.error(`[useLocalStorage] Retry failed. Critical storage failure for key "${key}". Falling back to memory-only state.`);
             }
           } else {
-            throw error;
+            console.warn(`[useLocalStorage] Non-quota error setting key "${key}":`, error);
           }
         }
       }

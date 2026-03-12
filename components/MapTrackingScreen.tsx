@@ -9,6 +9,7 @@ import { ViewState } from '../types';
 
 interface MapTrackingScreenProps {
   userHeight?: number;
+  userWeight?: number;
   setView?: (view: ViewState) => void;
 }
 
@@ -31,8 +32,9 @@ const MapController = ({ center }: { center: [number, number] | null }) => {
   return null;
 };
 
-const MapTrackingScreen: React.FC<MapTrackingScreenProps> = ({ userHeight = 175, setView }) => {
+const MapTrackingScreen: React.FC<MapTrackingScreenProps> = ({ userHeight = 175, userWeight = 70, setView }) => {
   const [isStarted, setIsStarted] = useState(false);
+  const [activityType, setActivityType] = useState<'Walking' | 'Cycling'>('Walking');
   const [position, setPosition] = useState<[number, number] | null>(null);
   const [path, setPath] = useState<[number, number][]>([]);
   const [distance, setDistance] = useState(0); 
@@ -107,10 +109,21 @@ const MapTrackingScreen: React.FC<MapTrackingScreenProps> = ({ userHeight = 175,
   };
 
   const calculateStats = () => {
-    const strideLengthCm = userHeight * 0.415;
-    const steps = Math.floor((distance * 100) / strideLengthCm);
-    const calories = Math.floor(steps * 0.04);
     const distanceKm = parseFloat((distance/1000).toFixed(3));
+    let calories = 0;
+    let steps = 0;
+
+    if (activityType === 'Walking') {
+      const strideLengthCm = userHeight * 0.415;
+      steps = Math.floor((distance * 100) / strideLengthCm);
+      // Walking formula: ~60 kcal per km (or MET based)
+      calories = Math.floor(distanceKm * 60);
+    } else {
+      // Cycling formula: ~30 kcal per km (or MET based)
+      calories = Math.floor(distanceKm * 30);
+      steps = 0; // Cycling doesn't count as steps
+    }
+
     return { steps, calories, distanceKm };
   };
 
@@ -173,24 +186,46 @@ const MapTrackingScreen: React.FC<MapTrackingScreenProps> = ({ userHeight = 175,
         className="absolute bottom-6 left-6 right-6 z-20 glass-panel rounded-[2rem] p-6 shadow-2xl border border-white/10"
       >
         <div className="flex flex-col gap-6">
+          {/* Activity Selection UI */}
+          {!isStarted && !showSaveModal && (
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setActivityType('Walking')}
+                className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${activityType === 'Walking' ? 'bg-luxury-neon border-luxury-neon text-black shadow-[0_0_15px_rgba(206,242,69,0.2)]' : 'bg-white/5 border-white/10 text-gray-500'}`}
+              >
+                Walking
+              </button>
+              <button 
+                onClick={() => setActivityType('Cycling')}
+                className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${activityType === 'Cycling' ? 'bg-luxury-neon border-luxury-neon text-black shadow-[0_0_15px_rgba(206,242,69,0.2)]' : 'bg-white/5 border-white/10 text-gray-500'}`}
+              >
+                Cycling
+              </button>
+            </div>
+          )}
+
           <div className="flex justify-between items-center px-2">
-            <div className="flex flex-col items-center gap-1">
+            <div className={`flex flex-col items-center gap-1 ${activityType === 'Walking' ? 'ml-[13px]' : 'ml-7'}`}>
               <Timer size={14} className="text-gray-500 mb-1" />
               <span className="text-xl font-black text-white tabular-nums">{formatTime(elapsedTime)}</span>
               <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Time</span>
             </div>
             <div className="w-px h-8 bg-white/10"></div>
-            <div className="flex flex-col items-center gap-1">
+            <div className={`flex flex-col items-center gap-1 ${activityType === 'Walking' ? 'mr-0' : 'mr-7'}`}>
               <MapIcon size={14} className="text-gray-500 mb-1" />
               <span className="text-xl font-black text-white tabular-nums">{(distance/1000).toFixed(2)}</span>
               <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">KM</span>
             </div>
-            <div className="w-px h-8 bg-white/10"></div>
-            <div className="flex flex-col items-center gap-1">
-              <Footprints size={14} className="text-gray-500 mb-1" />
-              <span className="text-xl font-black text-white tabular-nums">{currentStats.steps}</span>
-              <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Steps</span>
-            </div>
+            {activityType === 'Walking' && (
+              <>
+                <div className="w-px h-8 bg-white/10"></div>
+                <div className="flex flex-col items-center gap-1">
+                  <Footprints size={14} className="text-gray-500 mb-1" />
+                  <span className="text-xl font-black text-white tabular-nums">{currentStats.steps}</span>
+                  <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Steps</span>
+                </div>
+              </>
+            )}
           </div>
 
           <button 
@@ -220,11 +255,13 @@ const MapTrackingScreen: React.FC<MapTrackingScreenProps> = ({ userHeight = 175,
                 <h2 className="text-2xl font-black text-white tracking-tight text-center mb-2">Session Complete</h2>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest text-center mb-8">Calculated Metrics</p>
 
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                   <div className="bg-white/5 border border-white/5 rounded-2xl p-4 flex flex-col items-center">
-                      <span className="text-3xl font-black text-luxury-neon">{currentStats.steps}</span>
-                      <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Steps Added</span>
-                   </div>
+                <div className={`grid gap-4 mb-8 ${activityType === 'Walking' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                   {activityType === 'Walking' && (
+                     <div className="bg-white/5 border border-white/5 rounded-2xl p-4 flex flex-col items-center">
+                        <span className="text-3xl font-black text-luxury-neon">{currentStats.steps}</span>
+                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Steps Added</span>
+                     </div>
+                   )}
                    <div className="bg-white/5 border border-white/5 rounded-2xl p-4 flex flex-col items-center">
                       <span className="text-3xl font-black text-white">{currentStats.calories}</span>
                       <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Kcal Burned</span>

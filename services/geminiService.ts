@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Content } from "@google/genai";
+import { GoogleGenAI, Type, Content, ThinkingLevel } from "@google/genai";
 import { FoodAnalysis, UserMetrics, ActivityData, WorkoutPlan, UserProfile } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -88,12 +88,12 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   return handleGenAIError(lastError);
 }
 
-export const getFastHealthTip = async (userStats: string) => {
+export const getFastHealthTip = async (userStats: string, context: string = "175cm, 70kg, Active") => {
   return withRetry(async () => {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-flash-lite-latest',
-        contents: `Persona: ELITE COACH. User Context: 175cm, 70kg, Sedentary. Give a 1-sentence luxury fitness tip for: ${userStats}.`,
+        contents: `Persona: ELITE COACH. User Context: ${context}. Give a 1-sentence luxury fitness tip for: ${userStats}.`,
       });
       return response.text || "Stay elite.";
     } catch (error) {
@@ -109,39 +109,44 @@ export const getCoachChatStream = async (
   activity: ActivityData,
   isThinkingMode: boolean = true
 ) => {
-  // Fixed Context as requested
-  const height = 175;
-  const weight = 70;
-  const goal = 'Muscle Gain & Fat Loss';
-  const activityLevel = 'Sedentary (Office Job)';
+  // Use real profile data from onboarding
+  const metrics = profile.metrics || {};
+  const height = metrics.height || 175;
+  const weight = metrics.weight || 70;
+  const dob = metrics.dob || 'Unknown';
+  const gender = metrics.gender || 'Elite Member';
+  const goal = metrics.fitnessGoal || profile.goals?.fitnessGoal || 'Optimize performance';
+  const activityLevel = metrics.activityLevel || 'Active';
   
   const systemInstruction = `Role: You are 'ELITE COACH', a hyper-intelligent fitness AI.
-
+ 
 User Profile (CONTEXT):
-- Name: User
+- Name: ${profile.name || 'Elite User'}
+- Gender: ${gender}
 - Height: ${height} cm
 - Weight: ${weight} kg
-- Goal: ${goal}
+- Date of Birth: ${dob}
+- Primary Goal: ${goal}
 - Activity Level: ${activityLevel}
-
+ 
 YOUR RULES:
 1. Always answer based on the User Profile above.
 2. If the user asks for a Diet or Workout Plan, output the comprehensive details in formatted text first.
 3. CRITICAL: At the very end of your response, provide exactly one JSON block for the system to synchronize.
    Format must be: SYNC_PROTOCOL: {"update_targets": true, "target_steps": 10000, "target_calories": 2500, "target_protein": 160, "plan_name": "Protocol Name"}
-
+ 
 Tone: Authoritative, elite, and highly scientific.
 Today's Activity: ${activity.steps} steps, ${activity.calories} calories.`;
 
-  const primaryModel = isThinkingMode ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+  const primaryModel = isThinkingMode ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
 
   const config: any = { 
     systemInstruction, 
     temperature: 0.7 
   };
   
-  if (primaryModel === 'gemini-3-pro-preview') {
-    config.thinkingConfig = { thinkingBudget: 16384 };
+  if (isThinkingMode) {
+    config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
   }
 
   try {
@@ -204,14 +209,29 @@ export const generateWorkoutRoutine = async (
 ): Promise<WorkoutPlan> => {
   return withRetry(async () => {
     try {
-      const prompt = `Persona: ELITE COACH. Generate workout: H175 W70 Goal:${goal} Intensity:${intensity}. JSON format.`;
+      const prompt = `Persona: ELITE COACH. Generate a hyper-personalized workout protocol.
+User Metrics:
+- Height: ${metrics.height}cm
+- Weight: ${metrics.weight}kg
+- Age: ${metrics.age}
+- Gender: ${metrics.gender}
+- Activity Level: ${metrics.activityLevel}
+- Current Goal: ${goal}
+
+Constraints:
+- Equipment: ${equipment}
+- Duration: ${duration}
+- Intensity: ${intensity}
+
+Analyze the biometric data and provide a scientific, high-performance routine in JSON format.`;
+
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3.1-pro-preview',
         contents: prompt,
         config: { 
           responseMimeType: "application/json", 
           responseSchema: workoutResponseSchema,
-          thinkingConfig: { thinkingBudget: 8000 } 
+          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH } 
         }
       });
       if (response.text) {

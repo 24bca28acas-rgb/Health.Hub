@@ -9,12 +9,12 @@ import { Content } from '@google/genai';
 import useLocalStorage from '../hooks/useLocalStorage';
 
 interface ChatBotProps {
-  metrics: UserMetrics;
+  profile: UserProfile;
   activity: ActivityData;
   onUpdateTargets?: (calories: number, steps: number, planName: string) => void;
 }
 
-const ChatBot: React.FC<ChatBotProps> = ({ metrics, activity, onUpdateTargets }) => {
+const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets }) => {
   const [messages, setMessages] = useState<(ChatMessage & { plan_data?: any })[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -104,12 +104,6 @@ const ChatBot: React.FC<ChatBotProps> = ({ metrics, activity, onUpdateTargets })
     saveChatMessage(userId, userText, true).catch(console.error);
 
     try {
-      const { data: freshProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
       const historyContext: Content[] = messages
         .slice(-10)
         .map(h => ({
@@ -120,7 +114,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ metrics, activity, onUpdateTargets })
       const stream = await getCoachChatStream(
         userText, 
         historyContext, 
-        freshProfile || {}, 
+        profile, 
         activity, 
         thinkingMode
       );

@@ -99,12 +99,17 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
             (payload) => {
               const newData = payload.new;
               if (newData.activity_date === today) {
-                // Only update if the DB value is higher (prevents race conditions with our own debounced writes)
-                if (newData.steps > steps) {
-                    setSteps(newData.steps);
-                    setCalories(newData.calories_burned);
-                    setDistance(newData.distance_km);
-                    lastSyncValue.current = newData.steps; // Update baseline so we don't double-save
+                // Update if DB has more data (e.g. manual logs or other devices)
+                if (newData.steps > steps || newData.calories_burned > calories) {
+                    if (newData.steps > steps) {
+                        setSteps(newData.steps);
+                        setDistance(newData.distance_km);
+                        lastSyncValue.current = newData.steps;
+                    }
+                    // Always take higher calories (manual logs + steps)
+                    if (newData.calories_burned > calories) {
+                        setCalories(newData.calories_burned);
+                    }
                 }
               }
             }
@@ -127,8 +132,18 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
 
   // --- PERSISTENCE ENGINE (Debounced) ---
   useEffect(() => {
-    if (!userId || steps === lastSyncValue.current) return;
-
+    // Sync if steps changed OR calories changed significantly (to capture manual logs if we were the source, but here we are syncing TO db)
+    // Actually, if we update local state from DB, this effect runs.
+    // We need to ensure we don't overwrite DB with old data if we are lagging.
+    // But we just updated from DB, so we are current.
+    
+    if (!userId) return;
+    
+    // Skip if nothing changed since last sync (approx)
+    // But calories might change without steps
+    // We track lastSyncValue for steps. We might need one for calories too?
+    // For now, let's just debounce.
+    
     if (syncTimer.current) clearTimeout(syncTimer.current);
 
     syncTimer.current = setTimeout(async () => {
@@ -163,8 +178,10 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
       if (now - lastStepTime.current > 600) {
          setSteps(prev => {
              const next = prev + 1;
-             setCalories(next * 0.04);
-             setDistance(next * 0.0008);
+             // Increment calories/distance instead of recalculating from scratch
+             // This preserves manual logs
+             setCalories(c => c + 0.04);
+             setDistance(d => d + 0.0008);
              return next;
          });
          lastStepTime.current = now;

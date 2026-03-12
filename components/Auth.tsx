@@ -105,14 +105,18 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const size = Math.min(video.videoWidth, video.videoHeight);
-      canvas.width = size;
-      canvas.height = size;
+      
+      // Resize to 200x200 to prevent massive base64 strings
+      const TARGET_SIZE = 200;
+      canvas.width = TARGET_SIZE;
+      canvas.height = TARGET_SIZE;
+      
       const ctx = canvas.getContext('2d');
       if (ctx) {
         const startX = (video.videoWidth - size) / 2;
         const startY = (video.videoHeight - size) / 2;
-        ctx.drawImage(video, startX, startY, size, size, 0, 0, size, size);
-        const base64 = canvas.toDataURL('image/jpeg', 0.8);
+        ctx.drawImage(video, startX, startY, size, size, 0, 0, TARGET_SIZE, TARGET_SIZE);
+        const base64 = canvas.toDataURL('image/jpeg', 0.7);
         setCapturedImage(base64);
         stopCamera();
       }
@@ -167,7 +171,12 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
         setResetEmail('');
       }, 2500);
     } catch (err: any) {
-      setResetError(err.message || "Reset failed.");
+      const msg = err.message || "Reset failed.";
+      if (msg.toLowerCase().includes("failed to fetch")) {
+        setResetError("Network Error: Connection blocked. Please check your connection or adblocker.");
+      } else {
+        setResetError(msg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -194,6 +203,7 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
         await new Promise(resolve => setTimeout(resolve, 500));
         onLoginSuccess();
       } else {
+        if (!password || !confirmPassword) throw new Error("Password fields required.");
         if (password !== confirmPassword) throw new Error("Passwords do not match.");
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
         const { data } = await createUserWithEmailAndPassword(email, password);
@@ -220,13 +230,19 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
     try {
       await performAuth();
     } catch (err: any) {
-      const isQuotaError = err.message?.toLowerCase().includes('quota') || err.name === 'QuotaExceededError';
-      const isExpectedAuthError = err.message?.toLowerCase().includes('invalid login credentials') || 
-                                  err.message?.toLowerCase().includes('rate limit') ||
-                                  err.message?.toLowerCase().includes('too many requests');
+      const errorMessage = typeof err === 'string' ? err : (err.message || "");
+      const isQuotaError = errorMessage.toLowerCase().includes('quota') || err.name === 'QuotaExceededError';
+      const isExpectedAuthError = errorMessage.toLowerCase().includes('invalid login credentials') || 
+                                  errorMessage.toLowerCase().includes('rate limit') ||
+                                  errorMessage.toLowerCase().includes('too many requests') ||
+                                  errorMessage === "Passwords do not match." ||
+                                  errorMessage.includes("at least 6 characters") ||
+                                  errorMessage.toLowerCase().includes("already registered") ||
+                                  errorMessage.toLowerCase().includes("account corrupted") ||
+                                  errorMessage.toLowerCase().includes("failed to fetch");
       
       if (!isQuotaError && !isExpectedAuthError) {
-        console.error('❌ AUTH ERROR:', err.message || err);
+        console.error('❌ AUTH ERROR:', errorMessage || err);
       }
       
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -245,15 +261,21 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
         }
       }
 
-      let msg = err.message || "Auth Protocol Refused.";
+      let msg = errorMessage || "Auth Protocol Refused.";
       const lowerMsg = msg.toLowerCase();
       
       if (lowerMsg.includes("invalid login credentials")) {
-        msg = "Credentials not recognized. Proceed to 'Sign Up' if this is your first calibration.";
+        msg = "Credentials not recognized. Please switch to 'Sign Up' if this is your first time.";
         setIsCredentialError(true);
       } else if (lowerMsg.includes("rate limit") || lowerMsg.includes("too many requests")) {
         msg = "Neural network throttled. Wait 60s.";
         setLockoutTimer(60);
+      } else if (lowerMsg.includes("account corrupted")) {
+        msg = errorMessage;
+      } else if (lowerMsg.includes("failed to fetch")) {
+        msg = "Network Error: Connection blocked (check adblockers/firewall). Use Guest Protocol to proceed offline.";
+      } else if (lowerMsg.includes("user already registered")) {
+        msg = "ID already exists. Please switch to 'Login' mode.";
       }
       
       setError(msg);
@@ -411,6 +433,22 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
                    </button>
                 </div>
 
+                {!isLogin && (
+                   <div className="relative group">
+                      <Lock className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40 group-focus-within:text-luxury-neon transition-colors" />
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        value={confirmPassword} 
+                        onChange={(e) => setConfirmPassword(e.target.value)} 
+                        placeholder="Confirm Passcode"
+                        className="w-full pl-12 pr-12 py-4 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl text-white text-sm font-medium placeholder:text-gray-500 outline-none focus:border-luxury-neon/30 transition-all" 
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors">
+                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                   </div>
+                )}
+
                 {/* Remember Me & Recovery Links */}
                 <div className="flex justify-between items-center px-1">
                     <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setRememberMe(!rememberMe)}>
@@ -426,16 +464,6 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
                        </button>
                     )}
                 </div>
-
-                {!isLogin && (
-                   <input 
-                     type="password" 
-                     value={confirmPassword} 
-                     onChange={(e) => setConfirmPassword(e.target.value)} 
-                     placeholder="Confirm Passcode"
-                     className="w-full pl-12 pr-4 py-4 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl text-white text-sm font-medium placeholder:text-gray-500 outline-none focus:border-luxury-neon/30 transition-all" 
-                   />
-                )}
                 
                 {/* 4. The 'Hero' Button */}
                 <button 

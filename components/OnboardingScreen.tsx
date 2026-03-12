@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ArrowLeft, User, Ruler, Weight, Activity, Target, CheckCircle, Loader2, AlertCircle, LogOut } from 'lucide-react';
+import { ChevronRight, ArrowLeft, User, Ruler, Weight, Activity, Target, CheckCircle, Loader2, AlertCircle, LogOut, Sparkles, Camera, BrainCircuit } from 'lucide-react';
 import { type User as SupabaseUser } from '@supabase/supabase-js';
 import { Gender, ActivityLevel, FitnessGoal, UserProfile, ActivityData } from '../types';
 import { completeOnboarding, DEFAULT_AVATAR, signOut, supabase } from '../services/supabase';
@@ -12,7 +12,7 @@ interface OnboardingScreenProps {
 }
 
 const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete }) => {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); // Start at 0 for Intro
   const [loading, setLoading] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -196,9 +196,79 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
             </button>
           </div>
 
-          <div className="w-full max-w-md glass-panel rounded-[3rem] p-1 border border-white/10 shadow-2xl relative overflow-hidden my-auto shrink-0">
+          <div className="w-full max-w-md glass-panel rounded-[3rem] p-1 border border-white/10 shadow-2xl relative overflow-hidden my-auto shrink-0 bg-black/40 backdrop-blur-3xl">
              <AnimatePresence mode="wait">
                 
+                {/* STEP 0: WELCOME INTRO */}
+                {step === 0 && (
+                    <motion.div key="step0" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} className="p-10 space-y-10 text-center">
+                        <div className="space-y-4">
+                            <motion.div 
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.2 }}
+                                className="w-20 h-20 bg-luxury-neon/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6 border border-luxury-neon/20 shadow-[0_0_30px_rgba(206,242,69,0.1)]"
+                            >
+                                <Sparkles size={40} className="text-luxury-neon" />
+                            </motion.div>
+                            <motion.h1 
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.3 }}
+                                className="text-3xl font-black text-white uppercase tracking-tighter leading-none"
+                            >
+                                Welcome to <br/><span className="text-luxury-neon">Healthy.hub</span>
+                            </motion.h1>
+                            <motion.p 
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.4 }}
+                                className="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em]"
+                            >
+                                Your Elite Performance Protocol
+                            </motion.p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-6 text-left">
+                            {[
+                                { icon: BrainCircuit, title: 'AI COACH', desc: 'Personalized neural fitness insights.' },
+                                { icon: Camera, title: 'FOOD LENS', desc: 'Instant biometric meal analysis.' },
+                                { icon: Activity, title: 'TRACKER', desc: 'Real-time performance synchronization.' }
+                            ].map((feature, i) => (
+                                <motion.div 
+                                    key={i}
+                                    initial={{ x: -20, opacity: 0 }}
+                                    animate={{ x: 0, opacity: 1 }}
+                                    transition={{ delay: 0.5 + (i * 0.1) }}
+                                    className="flex items-center gap-4 group"
+                                >
+                                    <div className="p-3 bg-white/5 rounded-2xl border border-white/10 group-hover:border-luxury-neon/30 transition-all">
+                                        <feature.icon size={18} className="text-luxury-neon" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-[10px] font-black text-white uppercase tracking-widest">{feature.title}</h3>
+                                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">{feature.desc}</p>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+
+                        <motion.div 
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ delay: 0.8 }}
+                            className="pt-6"
+                        >
+                            <button 
+                                onClick={nextStep} 
+                                className="w-full py-5 bg-white text-black font-black uppercase tracking-[0.2em] text-xs rounded-2xl flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-95 transition-all"
+                            >
+                                Initialize Protocol <ChevronRight size={18} />
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+
                 {/* STEP 1: IDENTITY */}
                 {step === 1 && (
                     <motion.div key="step1" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-8 space-y-6">
@@ -230,7 +300,10 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
                             </div>
                         </div>
 
-                        <div className="pt-4 flex justify-end">
+                        <div className="pt-4 flex justify-between">
+                            <button onClick={prevStep} className="px-6 py-4 bg-white/5 text-white font-black uppercase tracking-widest text-xs rounded-2xl flex items-center gap-2 hover:bg-white/10 transition-all">
+                                <ArrowLeft size={16} /> Back
+                            </button>
                             <button onClick={nextStep} disabled={!dob || !name} className="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-xs rounded-2xl flex items-center gap-2 disabled:opacity-50 hover:scale-105 active:scale-95 transition-all">
                                 Next <ChevronRight size={16} />
                             </button>

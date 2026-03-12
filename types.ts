@@ -90,7 +90,19 @@ export enum ViewState {
   MAP_TRACKER = 'MAP_TRACKER',
   CHAT = 'CHAT',
   PROFILE = 'PROFILE',
-  WORKOUT_LAB = 'WORKOUT_LAB'
+  WORKOUT_LAB = 'WORKOUT_LAB',
+  ACTIVITY_LOG = 'ACTIVITY_LOG'
+}
+
+export interface ActivityLogDB {
+  id: string;
+  user_id: string;
+  activity_type: string;
+  duration_minutes: number;
+  intensity: 'Low' | 'Medium' | 'High';
+  calories_burned: number;
+  notes?: string;
+  created_at: string;
 }
 
 export type Gender = 'Male' | 'Female' | 'Other';
