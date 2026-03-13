@@ -4,10 +4,32 @@ import { ActivityData, UserMetrics, UserProfile, DailyActivityDB, FoodLogDB, Cha
 
 export type { User } from '@supabase/supabase-js';
 
-console.log("Supabase URL Status: ", !!import.meta.env.VITE_SUPABASE_URL);
+const DEFAULT_SUPABASE_URL = 'https://tngzcpgoshpfwuarskul.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuZ3pjcGdvc2hwZnd1YXJza3VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0NjY5NTksImV4cCI6MjA4NjA0Mjk1OX0.OKH4nWdTFa7OZ6NoAfAeuD6HFlJGvmJ-aYfdZ3rpBp4';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://tngzcpgoshpfwuarskul.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuZ3pjcGdvc2hwZnd1YXJza3VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0NjY5NTksImV4cCI6MjA4NjA0Mjk1OX0.OKH4nWdTFa7OZ6NoAfAeuD6HFlJGvmJ-aYfdZ3rpBp4';
+const resolveSupabaseUrl = () => {
+  const rawUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!rawUrl) return DEFAULT_SUPABASE_URL;
+
+  try {
+    return new URL(rawUrl).toString().replace(/\/$/, '');
+  } catch {
+    console.warn('[Supabase] Invalid VITE_SUPABASE_URL detected. Using hardened fallback URL for preview stability.');
+    return DEFAULT_SUPABASE_URL;
+  }
+};
+
+const resolveSupabaseKey = () => {
+  const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!rawKey || rawKey.length < 24) {
+    console.warn('[Supabase] Missing/invalid anon key. Falling back to preview-safe default key.');
+    return DEFAULT_SUPABASE_ANON_KEY;
+  }
+  return rawKey;
+};
+
+const SUPABASE_URL = resolveSupabaseUrl();
+const SUPABASE_ANON_KEY = resolveSupabaseKey();
 const PROJECT_ID = SUPABASE_URL.split('//')[1]?.split('.')[0] || 'tngzcpgoshpfwuarskul';
 
 export const performMaintenance = (force: boolean = false) => {
@@ -219,15 +241,21 @@ export const upsertDailyActivity = async (userId: string, steps: number, calorie
  * INCREMENTAL UPDATE (Used by Map Tracking)
  * Fetches current DB value and ADDS to it to prevent overwriting background steps.
  */
-export const incrementMapSession = async (userId: string, sessionSteps: number, sessionCals: number, sessionDist: number) => {
+export const incrementMapSession = async (
+  userId: string,
+  sessionSteps: number,
+  sessionCals: number,
+  sessionDist: number,
+  sessionActiveMinutes: number,
+  sessionActivityType: 'Walking' | 'Cycling'
+) => {
   if (isGuest(userId)) return;
   const todayKey = getLocalTodayKey();
 
   try {
-    // 1. Fetch current data
     const { data: currentData } = await supabase
       .from('daily_activity')
-      .select('steps, calories_burned, distance_km')
+      .select('steps, calories_burned, distance_km, active_minutes, hydration_ml')
       .eq('user_id', userId)
       .eq('activity_date', todayKey)
       .maybeSingle();
@@ -235,26 +263,25 @@ export const incrementMapSession = async (userId: string, sessionSteps: number, 
     const existingSteps = currentData?.steps || 0;
     const existingCals = currentData?.calories_burned || 0;
     const existingDist = currentData?.distance_km || 0;
+    const existingActiveMinutes = currentData?.active_minutes || 0;
+    const existingHydration = currentData?.hydration_ml || 0;
 
-    // 2. Add Session Data
-    const newSteps = existingSteps + sessionSteps;
-    const newCals = existingCals + sessionCals;
-    const newDist = existingDist + sessionDist;
-
-    // 3. Upsert New Total
     const { error } = await supabase.from('daily_activity').upsert({
       user_id: userId,
       activity_date: todayKey,
-      steps: newSteps,
-      calories_burned: newCals,
-      distance_km: newDist,
+      steps: existingSteps + sessionSteps,
+      calories_burned: existingCals + sessionCals,
+      distance_km: existingDist + sessionDist,
+      active_minutes: existingActiveMinutes + sessionActiveMinutes,
+      hydration_ml: existingHydration,
+      activity_type: sessionActivityType,
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id, activity_date' });
 
     if (error) throw error;
-    console.log("Map Session Synced via Delta Logic");
+    console.log('Map Session Synced via Delta Logic');
   } catch (e) {
-    console.error("Map Sync Error:", e);
+    console.error('Map Sync Error:', e);
   }
 };
 

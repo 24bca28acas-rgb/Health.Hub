@@ -139,7 +139,7 @@ const StreakWidget: React.FC<StreakWidgetProps> = ({ completedDates, onSeeMore, 
 
         <div className="grid grid-cols-7 w-full gap-2 mb-6">
           {weekData.map((data, index) => (
-            <div key={index} className="flex flex-col items-center gap-2">
+            <div key={`${data.dayLabel}-${index}`} className="flex flex-col items-center gap-2">
               <motion.button
                 onClick={() => handleDayClick(data.dateStr, data.state)}
                 initial={{ scale: 0.8, opacity: 0 }}

@@ -133,7 +133,7 @@ const MapTrackingScreen: React.FC<MapTrackingScreenProps> = ({ userHeight = 175,
     try {
       const stats = calculateStats();
       // Use incrementMapSession to safely ADD to the existing total (Delta Logic)
-      await incrementMapSession(userId, stats.steps, stats.calories, stats.distanceKm);
+      await incrementMapSession(userId, stats.steps, stats.calories, stats.distanceKm, Math.max(1, Math.round(elapsedTime / 60)), activityType);
       
       // Reset and Navigate
       setDistance(0);
