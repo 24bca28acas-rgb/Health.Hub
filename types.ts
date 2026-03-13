@@ -16,8 +16,11 @@ export interface DailyActivityDB {
   user_id: string;
   activity_date: string; // YYYY-MM-DD
   steps: number;
-  calories_burned: number;
   distance_km: number;
+  hydration_ml: number;
+  calories_burned: number;
+  active_minutes: number;
+  activity_type?: 'Walking' | 'Cycling';
   is_target_met: boolean;
   streak_awarded?: boolean; // New field to prevent double-counting streaks
   updated_at: string;

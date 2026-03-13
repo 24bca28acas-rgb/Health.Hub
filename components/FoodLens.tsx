@@ -271,8 +271,18 @@ const FoodLens: React.FC<FoodLensProps> = ({ history, onAddToHistory }) => {
         ) : stream ? (
            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
         ) : (
-           <div className="h-full w-full flex items-center justify-center bg-black">
-             <Loader2 className="animate-spin text-luxury-neon" size={40} />
+           <div className="h-full w-full flex flex-col items-center justify-center bg-black gap-6 px-6">
+             <div className="w-40 h-40 rounded-full border border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-center relative">
+               <div className="w-24 h-24 rounded-full border-2 border-luxury-neon/60" />
+               <div className="absolute inset-8 rounded-full border border-cyan-400/40" />
+             </div>
+             <button onClick={startCamera} className="px-6 py-3 rounded-full bg-luxury-neon text-black text-[10px] font-black uppercase tracking-[0.2em]">
+               Initialize Camera Optics
+             </button>
+             <div className="glass-card rounded-2xl p-4 border border-white/10 bg-white/5 max-w-sm text-center">
+               <p className="text-[10px] text-luxury-neon font-black uppercase tracking-widest mb-1">Analysis & Goal Alignment Protocol</p>
+               <p className="text-xs text-gray-400">Align scans with your calorie and macro objectives in real time.</p>
+             </div>
            </div>
         )}
       </div>

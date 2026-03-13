@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ActivityData, FoodHistoryItem } from '../types';
-import { Flame, Target, Sparkles, Play, Pause, Plus, Droplets, Zap, Footprints, Settings2, Check, Pencil } from 'lucide-react';
+import { Flame, Target, Sparkles, Play, Pause, Plus, Droplets, Zap, Footprints, Check, Pencil, ArrowLeft, SlidersHorizontal } from 'lucide-react';
 import StreakWidget from './StreakWidget';
 import StreakHistory from './StreakHistory';
 import { supabase } from '../services/supabase';
@@ -137,7 +137,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [editedGoals, setEditedGoals] = useState({
     stepGoal: data.stepGoal,
     hydrationGoal: 2.5,
-    calorieGoal: data.calorieGoal
+    activeMinutesGoal: 45
   });
 
   const addHydration = (amountL: number) => {
@@ -189,15 +189,14 @@ const Dashboard: React.FC<DashboardProps> = ({
       setEditedGoals({
         stepGoal: data.stepGoal,
         hydrationGoal: hydrationGoal,
-        calorieGoal: data.calorieGoal
+        activeMinutesGoal: 45
       });
     }
-  }, [data.stepGoal, data.calorieGoal, hydrationGoal, isEditing]);
+  }, [data.stepGoal, hydrationGoal, isEditing]);
 
   const handleSaveGoals = async () => {
     onUpdateGoals({
-      stepGoal: editedGoals.stepGoal,
-      calorieGoal: editedGoals.calorieGoal
+      stepGoal: editedGoals.stepGoal
     });
     setHydrationGoal(editedGoals.hydrationGoal);
     setIsEditing(false);
@@ -261,11 +260,26 @@ const Dashboard: React.FC<DashboardProps> = ({
   const caloriesProgress = (caloriesConsumed / data.calorieGoal) * 100;
   const stepsProgress = (data.steps / data.stepGoal) * 100;
   const hydrationProgress = (hydration / hydrationGoal) * 100;
+  const activeMinutes = Math.round(data.calories / 8);
 
   return (
     <div className="h-full w-full overflow-y-auto no-scrollbar p-6 space-y-8 pb-32 bg-[#050505]">
+      {/* Top Navigation HUD */}
+      <div className="flex items-center justify-between">
+        <button className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-center text-gray-300 hover:text-white transition-colors">
+          <ArrowLeft size={16} />
+        </button>
+        <div className="text-center">
+          <p className="text-[10px] text-gray-400 uppercase tracking-widest font-black">Daily Protocol</p>
+          <p className="text-[10px] text-luxury-neon uppercase tracking-[0.3em] font-black">Active Protocol</p>
+        </div>
+        <button className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-center text-gray-300 hover:text-white transition-colors">
+          <SlidersHorizontal size={16} />
+        </button>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col items-center mt-12 text-center space-y-6">
+      <div className="flex flex-col items-center mt-2 text-center space-y-6">
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -332,7 +346,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {isEditing ? (
                 <Check size={18} className="text-luxury-neon drop-shadow-[0_0_8px_#CCFF00]" />
               ) : (
-                <Settings2 size={18} className="text-gray-400 group-hover:text-luxury-neon transition-colors" />
+                <Pencil size={18} className="text-gray-400 group-hover:text-luxury-neon transition-colors" />
               )}
             </button>
           </div>
@@ -421,19 +435,19 @@ const Dashboard: React.FC<DashboardProps> = ({
               )}
             </div>
             <ProgressBar 
-              label="Caloric Burn" 
+              label="Active Time" 
               value={isEditing ? (
                 <div className="flex items-center gap-1">
                   <input 
                     type="number" 
-                    value={editedGoals.calorieGoal}
-                    onChange={(e) => setEditedGoals(prev => ({ ...prev, calorieGoal: parseInt(e.target.value) || 0 }))}
-                    className="w-16 bg-transparent border-b border-[#CCFF00]/50 text-right outline-none text-luxury-neon"
+                    value={editedGoals.activeMinutesGoal}
+                    onChange={(e) => setEditedGoals(prev => ({ ...prev, activeMinutesGoal: parseInt(e.target.value) || 0 }))}
+                    className="w-14 bg-transparent border-b border-[#CCFF00]/50 text-right outline-none text-luxury-neon"
                   />
-                  <span className="text-gray-500">KCAL</span>
+                  <span className="text-gray-500">MIN</span>
                 </div>
-              ) : `${Math.floor(data.calories)} KCAL`} 
-              progress={(data.calories / data.calorieGoal) * 100} 
+              ) : `${activeMinutes} / ${editedGoals.activeMinutesGoal} MIN`} 
+              progress={(activeMinutes / Math.max(1, editedGoals.activeMinutesGoal)) * 100} 
               color="#CCFF00" 
               icon={<Zap size={14} />}
             />

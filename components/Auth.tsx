@@ -473,7 +473,7 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
                    {isLoading ? (
                       <Loader2 className="animate-spin" size={18} />
                    ) : (
-                      isLogin ? "Initialize Session" : "Join Network"
+                      isLogin ? "Initialize Session" : "Register Protocol"
                    )}
                 </button>
               </form>
@@ -489,9 +489,18 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
                 {isLoading ? <Loader2 size={16} className="animate-spin" /> : <><UserCircle2 size={16} /> Guest Protocol</>}
              </button>
 
-             <div className="text-center">
-                <button onClick={() => { setIsLogin(!isLogin); setError(null); setIsCredentialError(false); }} className="text-[11px] font-bold text-gray-500 hover:text-white transition-colors tracking-wide">
-                   {isLogin ? "New User?" : "Have an ID?"} <span className="text-luxury-neon ml-1 uppercase">Switch Mode</span>
+             <div className="p-1 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl grid grid-cols-2 gap-1">
+                <button
+                  onClick={() => { setIsLogin(true); setError(null); setIsCredentialError(false); }}
+                  className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${isLogin ? 'bg-luxury-neon text-black' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => { setIsLogin(false); setError(null); setIsCredentialError(false); }}
+                  className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${!isLogin ? 'bg-luxury-neon text-black' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Sign Up
                 </button>
              </div>
 
