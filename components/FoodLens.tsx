@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ArrowLeft, History, Loader2, BrainCircuit, Zap, X, RefreshCw, AlertCircle, CheckCircle, Edit2, Camera, Image as ImageIcon, ThumbsUp, Keyboard, ZapOff, Flashlight, Minus, Plus, ChevronDown } from 'lucide-react';
 import { analyzeFoodImage, analyzeFoodText } from '../services/geminiService';
-import { submitAiFeedback } from '../services/supabase';
+import { submitAiFeedback } from '../services/storage';
 import { FoodAnalysis, FoodHistoryItem, FoodMacro } from '../types';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 

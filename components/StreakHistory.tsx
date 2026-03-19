@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Flame, Loader2, Calendar, AlertCircle } from 'lucide-react';
-import { supabase } from '../services/supabase';
+import { fetchFullUserDashboard } from '../services/storage';
 import DayDetailsModal from './DayDetailsModal';
 
 interface StreakHistoryProps {
@@ -17,31 +17,27 @@ const StreakHistory: React.FC<StreakHistoryProps> = ({ userId, onClose }) => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // 1. SUPABASE INTEGRATION (Fetch Data)
+  // 1. STORAGE INTEGRATION (Fetch Data)
   useEffect(() => {
     const fetchHistory = async () => {
       if (!userId) return;
       setLoading(true);
       
       try {
-        const { data, error } = await supabase
-          .from('daily_activity')
-          .select('activity_date, steps')
-          .eq('user_id', userId);
-
-        if (error) throw error;
+        const dashboard = await fetchFullUserDashboard(userId);
+        const data = dashboard?.history || [];
 
         // Convert response into local Map for the calendar grid flame logic
         const dataMap: Record<string, any> = {};
-        data?.forEach((row: any) => {
-          dataMap[row.activity_date] = {
+        data.forEach((row: any) => {
+          dataMap[row.activityDate] = {
             steps: row.steps
           };
         });
         
         setHistoryData(dataMap);
       } catch (err) {
-        console.error("Supabase Fetch Error:", err);
+        console.error("Storage Fetch Error:", err);
       } finally {
         setLoading(false);
       }

@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet
 import L from 'leaflet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Square, Timer, Footprints, Map as MapIcon, Loader2, Save, Trash2, CheckCircle } from 'lucide-react';
-import { supabase, incrementMapSession } from '../services/supabase';
+import { supabase, incrementMapSession } from '../services/storage';
 import { ViewState } from '../types';
 
 interface MapTrackingScreenProps {

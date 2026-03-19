@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserProfile } from '../types';
-import { DEFAULT_AVATAR } from '../services/supabase';
+import { DEFAULT_AVATAR } from '../services/storage';
 import Logo from './Logo';
 
 interface LoginViewProps {

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Flame, Footprints, ClipboardList, Calendar, Loader2, AlertCircle } from 'lucide-react';
-import { supabase } from '../services/supabase';
+import { fetchDayData } from '../services/storage';
 
 interface DayDetailsModalProps {
   date: string; // YYYY-MM-DD
@@ -31,34 +31,11 @@ const DayDetailsModal: React.FC<DayDetailsModalProps> = ({ date, userId, onClose
       setLoading(true);
       setError(null);
       try {
-        // 1. Fetch Activity Data
-        const { data: activity, error: actError } = await supabase
-          .from('daily_activity')
-          .select('steps, calories_burned')
-          .eq('user_id', userId)
-          .eq('activity_date', date)
-          .maybeSingle();
-
-        if (actError) throw actError;
-
-        // 2. Fetch Food Logs (Assuming a food_logs table exists or strictly based on user requirement)
-        // Adjusting time range for the selected date (00:00 to 23:59 UTC/Local)
-        const startOfDay = `${date}T00:00:00`;
-        const endOfDay = `${date}T23:59:59`;
-        
-        const { data: food, error: foodError } = await supabase
-          .from('food_logs')
-          .select('food_name, calories')
-          .eq('user_id', userId)
-          .gte('created_at', startOfDay)
-          .lte('created_at', endOfDay);
-        
-        // Note: If food_logs table doesn't exist yet, this part might fail silently or return error. 
-        // We handle it gracefully by defaulting to empty array.
+        const { activity, food } = await fetchDayData(userId, date);
 
         const steps = activity?.steps || 0;
-        const calories = activity?.calories_burned || 0;
-        const foodLogs = food?.map((f: any) => ({ name: f.food_name, calories: f.calories })) || [];
+        const calories = activity?.caloriesBurned || 0;
+        const foodLogs = food.map((f: any) => ({ name: f.foodName || f.food_name, calories: f.calories })) || [];
 
         // Determine if record truly "exists" (has activity or food)
         const exists = !!activity || foodLogs.length > 0;

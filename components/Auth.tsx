@@ -3,22 +3,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   createUserDocument, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
   updateProfile,
   sendPasswordResetEmail,
   signInAsGuest,
   signOut,
-  User
-} from '../services/supabase'; 
+  User,
+  supabase
+} from '../services/storage'; 
 import { Loader2, Eye, EyeOff, AlertCircle, User as UserIcon, Mail, Lock, CheckCircle, Camera, RefreshCw, ChevronRight, UserCircle2, Check, ArrowRight, Clock, DatabaseZap, UserPlus, ShieldAlert } from 'lucide-react';
 import Logo from './Logo';
 
-interface AuthProps {
-  onLoginSuccess: () => void;
-}
-
-const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
+const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,10 +127,9 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
     if (!capturedImage || !tempUser) return;
     setIsLoading(true);
     try {
-      await updateProfile(tempUser, { photoURL: capturedImage });
+      await updateProfile(tempUser.uid, { avatarUrl: capturedImage });
       // Add a small delay to ensure web local storage syncs
       await new Promise(resolve => setTimeout(resolve, 500));
-      onLoginSuccess();
     } catch (e) {
       setError("Failed to save avatar.");
     } finally {
@@ -147,7 +141,6 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
     stopCamera();
     // Add a small delay to ensure web local storage syncs
     await new Promise(resolve => setTimeout(resolve, 500));
-    onLoginSuccess();
   };
 
   const handleGuestMode = () => {
@@ -191,94 +184,101 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
     setIsCredentialError(false);
     setIsLoading(true);
 
-    const performAuth = async () => {
+    try {
+      let authError = null;
+      let authData = null;
+
       if (isLogin) {
-        await signInWithEmailAndPassword(email, password);
-        if (rememberMe) {
-          try { localStorage.setItem('healthy_hub_remembered_email', email); } catch (e) {}
-        } else {
-          try { localStorage.removeItem('healthy_hub_remembered_email'); } catch (e) {}
-        }
-        // Add a small delay to ensure web local storage syncs
-        await new Promise(resolve => setTimeout(resolve, 500));
-        onLoginSuccess();
+        // 1. STRICT LOGIN
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        authData = data;
+        authError = error;
       } else {
+        // 2. STRICT SIGN UP
         if (!password || !confirmPassword) throw new Error("Password fields required.");
         if (password !== confirmPassword) throw new Error("Passwords do not match.");
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
-        const { data } = await createUserWithEmailAndPassword(email, password);
-        if (rememberMe) {
-          try { localStorage.setItem('healthy_hub_remembered_email', email); } catch (e) {}
-        } else {
-          try { localStorage.removeItem('healthy_hub_remembered_email'); } catch (e) {}
+        
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        authData = data;
+        authError = error;
+      }
+
+      // 3. THE HARD BLOCK
+      if (authError) {
+        // Immediately block execution and display error
+        const msg = authError.message || "Auth Protocol Refused.";
+        setError(isLogin ? "Access Denied: " + msg : "Registration Failed: " + msg);
+        
+        if (msg.toLowerCase().includes("invalid login credentials")) {
+          setIsCredentialError(true);
         }
-        const user = data.user;
+        
+        setIsLoading(false);
+        return; // CRITICAL: Stop execution here.
+      }
+
+      // 4. SESSION VERIFICATION
+      if (!authData?.session) {
+        setError("System Error: No session returned. Please check your credentials.");
+        setIsLoading(false);
+        return; // CRITICAL: Stop execution here.
+      }
+
+      // 5. POST-AUTH LOGIC (No Routing Here)
+      if (rememberMe) {
+        try { localStorage.setItem('healthy_hub_remembered_email', email); } catch (e) {}
+      } else {
+        try { localStorage.removeItem('healthy_hub_remembered_email'); } catch (e) {}
+      }
+
+      // If Sign Up, handle profile creation and avatar capture
+      if (!isLogin) {
+        const user = authData.user;
         if (user) {
-            if (name) {
-                await updateProfile(user, { displayName: name });
-                await createUserDocument(user, name);
-            } else {
-                await createUserDocument(user, 'Elite User');
-            }
-            setTempUser(user);
-            setShowCamera(true);
-            startCamera();
+          if (name) {
+            await updateProfile(user.id, { name });
+            await createUserDocument({ uid: user.id, ...user } as any, name);
+          } else {
+            await createUserDocument({ uid: user.id, ...user } as any, 'Elite User');
+          }
+          setTempUser({ uid: user.id, ...user } as any);
+          setShowCamera(true);
+          startCamera();
         }
       }
-    };
+      
+      // NOTE: We do NOT manually navigate to /dashboard or /setup here.
+      // The global onAuthStateChange listener in App.tsx will handle routing
+      // based on the presence of a profile and its completion status.
 
-    try {
-      await performAuth();
     } catch (err: any) {
       const errorMessage = typeof err === 'string' ? err : (err.message || "");
       const isQuotaError = errorMessage.toLowerCase().includes('quota') || err.name === 'QuotaExceededError';
-      const isExpectedAuthError = errorMessage.toLowerCase().includes('invalid login credentials') || 
-                                  errorMessage.toLowerCase().includes('rate limit') ||
-                                  errorMessage.toLowerCase().includes('too many requests') ||
-                                  errorMessage === "Passwords do not match." ||
-                                  errorMessage.includes("at least 6 characters") ||
-                                  errorMessage.toLowerCase().includes("already registered") ||
-                                  errorMessage.toLowerCase().includes("account corrupted") ||
-                                  errorMessage.toLowerCase().includes("failed to fetch");
-      
-      if (!isQuotaError && !isExpectedAuthError) {
-        console.error('❌ AUTH ERROR:', errorMessage || err);
-      }
       
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
       if (isQuotaError) {
         setQuotaError(true);
-        localStorage.clear();
-        try {
-          await performAuth();
-          setQuotaError(false);
-          return;
-        } catch (retryErr: any) {
-          setError("Storage full. Clear browser data.");
-          setIsLoading(false);
-          return;
+        setError("Storage full. Clear browser data.");
+      } else {
+        let msg = errorMessage || "Auth Protocol Refused.";
+        const lowerMsg = msg.toLowerCase();
+        
+        if (lowerMsg.includes("invalid login credentials")) {
+          msg = "Credentials not recognized. Please switch to 'Sign Up' if this is your first time.";
+          setIsCredentialError(true);
+        } else if (lowerMsg.includes("rate limit") || lowerMsg.includes("too many requests")) {
+          msg = "Neural network throttled. Wait 60s.";
+          setLockoutTimer(60);
+        } else if (lowerMsg.includes("failed to fetch")) {
+          msg = "Network Error: Connection blocked (check adblockers/firewall). Use Guest Protocol to proceed offline.";
+        } else if (lowerMsg.includes("user already registered")) {
+          msg = "ID already exists. Please switch to 'Login' mode.";
         }
+        
+        setError(msg);
       }
-
-      let msg = errorMessage || "Auth Protocol Refused.";
-      const lowerMsg = msg.toLowerCase();
-      
-      if (lowerMsg.includes("invalid login credentials")) {
-        msg = "Credentials not recognized. Please switch to 'Sign Up' if this is your first time.";
-        setIsCredentialError(true);
-      } else if (lowerMsg.includes("rate limit") || lowerMsg.includes("too many requests")) {
-        msg = "Neural network throttled. Wait 60s.";
-        setLockoutTimer(60);
-      } else if (lowerMsg.includes("account corrupted")) {
-        msg = errorMessage;
-      } else if (lowerMsg.includes("failed to fetch")) {
-        msg = "Network Error: Connection blocked (check adblockers/firewall). Use Guest Protocol to proceed offline.";
-      } else if (lowerMsg.includes("user already registered")) {
-        msg = "ID already exists. Please switch to 'Login' mode.";
-      }
-      
-      setError(msg);
     } finally {
       setIsLoading(false);
     }

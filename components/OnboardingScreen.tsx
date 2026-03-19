@@ -2,12 +2,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ArrowLeft, User, Ruler, Weight, Activity, Target, CheckCircle, Loader2, AlertCircle, LogOut, Sparkles, Camera, BrainCircuit } from 'lucide-react';
-import { type User as SupabaseUser } from '@supabase/supabase-js';
 import { Gender, ActivityLevel, FitnessGoal, UserProfile, ActivityData } from '../types';
-import { completeOnboarding, DEFAULT_AVATAR, signOut, supabase } from '../services/supabase';
+import { completeOnboarding, DEFAULT_AVATAR, signOut, supabase } from '../services/storage';
 
 interface OnboardingScreenProps {
-  user: SupabaseUser;
+  user: any;
   onComplete: (profile: UserProfile) => void;
 }
 
@@ -130,6 +129,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
         const profileData: any = {
             name: name.trim(),
             email: currentUser.email || '',
+            primary_goal: goal, // Added for routing evaluation
             metrics
         };
 

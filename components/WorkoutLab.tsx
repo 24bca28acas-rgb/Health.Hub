@@ -7,7 +7,7 @@ import {
   ShieldCheck, RefreshCw, X, ArrowLeft, Target, AlertTriangle, BrainCircuit
 } from 'lucide-react';
 import { generateWorkoutRoutine } from '../services/geminiService';
-import { supabase, fetchSavedWorkouts, saveWorkout, deleteWorkout } from '../services/supabase';
+import { supabase, fetchSavedWorkouts, saveWorkout, deleteWorkout } from '../services/storage';
 import { WorkoutPlan, UserMetrics, FitnessGoal } from '../types';
 
 interface WorkoutLabProps {

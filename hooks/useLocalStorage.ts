@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { performMaintenance } from '../services/supabase';
+import { performMaintenance } from '../services/storage';
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const readValue = (): T => {

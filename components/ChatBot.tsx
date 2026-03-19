@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Sparkles, Loader2, Brain, Zap, Settings2, Trash2, AlertCircle, Info, CheckCircle2, ArrowRight } from 'lucide-react';
 import { getCoachChatStream } from '../services/geminiService';
-import { fetchChatHistory, saveChatMessage, supabase, updateUserTargets, clearChatHistory } from '../services/supabase';
+import { fetchChatHistory, saveChatMessage, supabase, updateUserTargets, clearChatHistory } from '../services/storage';
 import { ChatMessage, UserMetrics, ActivityData, UserProfile } from '../types';
 import { Content } from '@google/genai';
 import useLocalStorage from '../hooks/useLocalStorage';
@@ -15,7 +15,7 @@ interface ChatBotProps {
 }
 
 const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets }) => {
-  const [messages, setMessages] = useState<(ChatMessage & { plan_data?: any })[]>([]);
+  const [messages, setMessages] = useState<(ChatMessage & { planData?: any })[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -37,10 +37,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets })
            const history = await fetchChatHistory(user.id);
            setMessages(history.map(h => ({
                id: h.id, 
-               role: h.is_user_message ? 'user' : 'model', 
+               role: h.isUserMessage ? 'user' : 'model', 
                text: h.message, 
-               timestamp: new Date(h.created_at).getTime(),
-               plan_data: h.plan_data
+               timestamp: new Date(h.createdAt).getTime(),
+                planData: h.planData
            })));
        } finally { setIsLoading(false); }
     };
@@ -136,7 +136,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets })
       if (protocolMatch) {
           try {
               planData = JSON.parse(protocolMatch[1]);
-              setMessages(prev => prev.map(m => m.id === coachId ? { ...m, plan_data: planData } : m));
+              setMessages(prev => prev.map(m => m.id === coachId ? { ...m, planData: planData } : m));
           } catch (e) { console.error("Parse Failure", e); }
       }
 
@@ -247,29 +247,29 @@ const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets })
                 </div>
 
                 {/* Detect SYNC_PROTOCOL JSON and show the "APPLY PLAN" button */}
-                {msg.plan_data && (
+                {msg.planData && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-3 w-full max-w-[80%]">
                     <div className="glass-card rounded-2xl border border-luxury-neon/20 p-4 bg-luxury-neon/5">
                       <div className="flex items-center gap-3 mb-3">
                          <div className="w-8 h-8 rounded-full bg-luxury-neon/10 flex items-center justify-center text-luxury-neon">
                             <Sparkles size={16} />
                          </div>
-                         <h4 className="text-[11px] font-black text-white uppercase tracking-widest">{msg.plan_data.plan_name || 'Optimization Protocol'}</h4>
+                         <h4 className="text-[11px] font-black text-white uppercase tracking-widest">{msg.planData.plan_name || 'Optimization Protocol'}</h4>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         <div className="text-center p-2 bg-white/5 rounded-xl border border-white/5">
                           <p className="text-[8px] font-bold text-gray-500 uppercase mb-1">Steps</p>
-                          <p className="text-xs font-black text-white">{msg.plan_data.target_steps || msg.plan_data.steps}</p>
+                          <p className="text-xs font-black text-white">{msg.planData.target_steps || msg.planData.steps}</p>
                         </div>
                         <div className="text-center p-2 bg-white/5 rounded-xl border border-white/5">
                           <p className="text-[8px] font-bold text-gray-500 uppercase mb-1">Calories</p>
-                          <p className="text-xs font-black text-white">{msg.plan_data.target_calories || msg.plan_data.calories}</p>
+                          <p className="text-xs font-black text-white">{msg.planData.target_calories || msg.planData.calories}</p>
                         </div>
                       </div>
 
                       <button 
-                        onClick={() => handleApplyPlan(msg.id, msg.plan_data)}
+                        onClick={() => handleApplyPlan(msg.id, msg.planData)}
                         disabled={(msg as any).plan_applied || applyingPlan === msg.id}
                         className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
                           (msg as any).plan_applied 

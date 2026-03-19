@@ -3,7 +3,7 @@ import React, { ErrorInfo, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { Activity } from 'lucide-react';
-import { performMaintenance } from './services/supabase';
+import { performMaintenance } from './services/storage';
 
 /**
  * ELITE BOOT SEQUENCE

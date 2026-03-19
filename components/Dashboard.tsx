@@ -5,7 +5,7 @@ import { ActivityData, FoodHistoryItem } from '../types';
 import { Flame, Target, Sparkles, Play, Pause, Plus, Droplets, Zap, Footprints, Settings2, Check, Pencil } from 'lucide-react';
 import StreakWidget from './StreakWidget';
 import StreakHistory from './StreakHistory';
-import { supabase } from '../services/supabase';
+import { supabase } from '../services/storage';
 import { getFastHealthTip } from '../services/geminiService';
 import Logo from './Logo';
 import { ActivityLogger } from './ActivityLogger';
@@ -15,6 +15,7 @@ interface DashboardProps {
   onUpdateGoals: (newGoals: Partial<ActivityData>) => void;
   isTracking: boolean;
   onToggleTracking: () => Promise<void>;
+  onRefresh?: () => Promise<void>;
   foodHistory?: FoodHistoryItem[];
   streakValue?: number;
   activityHistory?: any[];
@@ -120,7 +121,7 @@ const ProgressBar: React.FC<{ label: string; value: React.ReactNode; progress: n
 );
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-  data, onToggleTracking, isTracking, onUpdateGoals, foodHistory = [], streakValue = 0, activityHistory = [], userWeight = 70, profile: initialProfile
+  data, onToggleTracking, isTracking, onUpdateGoals, onRefresh, foodHistory = [], streakValue = 0, activityHistory = [], userWeight = 70, profile: initialProfile
 }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [showActivityLogger, setShowActivityLogger] = useState(false);
@@ -474,7 +475,9 @@ const Dashboard: React.FC<DashboardProps> = ({
           userId={userId} 
           userWeight={userWeight} 
           onClose={() => setShowActivityLogger(false)} 
-          onLogSuccess={() => {}} 
+          onLogSuccess={() => {
+            if (onRefresh) onRefresh();
+          }} 
         />
       )}
     </div>

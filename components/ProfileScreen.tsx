@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Mail, Weight, Ruler, Calendar, Activity, LogOut, Edit3, Save, X, Camera, Loader2, AlertCircle, CheckCircle, Trash2, AlertTriangle, ChevronRight, RefreshCw } from 'lucide-react';
 import { UserProfile, UserMetrics } from '../types';
-import { signOut, updateProfile, updateUserMetrics, supabase, DEFAULT_AVATAR } from '../services/supabase';
+import { signOut, updateProfile, updateUserMetrics, supabase, DEFAULT_AVATAR, loadProfile } from '../services/storage';
 
 interface ProfileScreenProps {
   onUpdateMetrics: (metrics: UserMetrics) => void;
@@ -59,13 +59,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No authenticated session.");
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (error) throw error;
+      const data = await loadProfile(user.id);
 
       if (data) {
         // Map database fields to local profile state
@@ -73,13 +67,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
           id: data.id,
           name: data.name || 'Elite Member',
           email: data.email || '',
-          avatarUrl: data.avatar_url || DEFAULT_AVATAR,
-          metrics: data.metrics || {}
+          avatarUrl: data.avatarUrl || DEFAULT_AVATAR,
+          primary_goal: data.primary_goal, // Preserving for routing evaluation
+          metrics: {
+            height: data.metrics?.height || 0,
+            weight: data.metrics?.weight || 0,
+            dob: data.metrics?.dob || '',
+            age: data.metrics?.age || calculateAge(data.metrics?.dob),
+            activityLevel: data.metrics?.activityLevel || 'Moderately Active',
+            fitnessGoal: data.metrics?.fitnessGoal || 'Maintain'
+          }
         };
 
         const metrics: UserMetrics = {
-          height: data.height || data.metrics?.height || 0,
-          weight: data.weight || data.metrics?.weight || 0,
+          height: data.metrics?.height || 0,
+          weight: data.metrics?.weight || 0,
           dob: data.metrics?.dob || '',
           age: data.metrics?.age || calculateAge(data.metrics?.dob),
           activityLevel: data.metrics?.activityLevel || 'Moderately Active',
@@ -123,9 +125,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
       };
 
       // Consolidated call with extreme debugging enabled in service
-      await updateProfile(user, { 
-        displayName: tempName, 
-        photoURL: tempAvatar,
+      await updateProfile(user.id, { 
+        name: tempName, 
+        avatarUrl: tempAvatar,
         metrics: updatedMetrics,
         goals: tempGoals
       });

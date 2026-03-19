@@ -13,23 +13,23 @@ export interface ActivityData {
 
 export interface DailyActivityDB {
   id?: string;
-  user_id: string;
-  activity_date: string; // YYYY-MM-DD
+  userId: string;
+  activityDate: string; // YYYY-MM-DD
   steps: number;
-  calories_burned: number;
-  distance_km: number;
-  is_target_met: boolean;
-  streak_awarded?: boolean; // New field to prevent double-counting streaks
-  updated_at: string;
+  caloriesBurned: number;
+  distanceKm: number;
+  isTargetMet: boolean;
+  streakAwarded?: boolean; // New field to prevent double-counting streaks
+  updatedAt: string;
 }
 
 export interface FoodLogDB {
   id: string;
-  user_id: string;
-  food_name: string;
+  userId: string;
+  foodName: string;
   calories: number;
-  image_url?: string;
-  created_at: string;
+  imageUrl?: string;
+  createdAt: string;
 }
 
 export interface FoodAnalysis {
@@ -45,18 +45,18 @@ export interface FoodAnalysis {
 
 export interface ChatHistoryDB {
   id: string;
-  user_id: string;
+  userId: string;
   message: string;
-  is_user_message: boolean;
-  created_at: string;
-  plan_data?: any;
+  isUserMessage: boolean;
+  createdAt: string;
+  planData?: any;
 }
 
 export interface SavedWorkoutDB {
   id: string;
-  user_id: string;
-  plan_data: any;
-  created_at: string;
+  userId: string;
+  planData: any;
+  createdAt: string;
 }
 
 // --------------------------
@@ -96,13 +96,13 @@ export enum ViewState {
 
 export interface ActivityLogDB {
   id: string;
-  user_id: string;
-  activity_type: string;
-  duration_minutes: number;
+  userId: string;
+  activityType: string;
+  durationMinutes: number;
   intensity: 'Low' | 'Medium' | 'High';
-  calories_burned: number;
+  caloriesBurned: number;
   notes?: string;
-  created_at: string;
+  createdAt: string;
 }
 
 export type Gender = 'Male' | 'Female' | 'Other';
@@ -138,7 +138,9 @@ export interface UserProfile {
   };
   currentStreak?: number; 
   currentPlanName?: string; 
+  primary_goal?: string; // Added for routing evaluation
   lastActiveDate?: string;
+  updatedAt?: string;
 }
 
 export interface ChatMessage {

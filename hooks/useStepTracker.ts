@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, upsertDailyActivity, processStreakUpdate, getLocalTodayKey, checkAndAwardStreak } from '../services/supabase';
+import { fetchFullUserDashboard, upsertDailyActivity, processStreakUpdate, getLocalTodayKey, checkAndAwardStreak, onAuthStateChange } from '../services/storage';
 
 interface StepTrackerHook {
   steps: number;
@@ -10,6 +10,7 @@ interface StepTrackerHook {
   history: any[];
   isTracking: boolean;
   toggleTracking: () => Promise<void>;
+  refresh: () => Promise<void>;
   error: string | null;
   isLoading: boolean;
 }
@@ -31,124 +32,55 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
   const lastMag = useRef(0);
   const wakeLock = useRef<any>(null);
 
-  // --- INITIALIZATION & REALTIME SYNC ---
-  useEffect(() => {
-    let subscription: any = null;
-
-    const loadSessionData = async () => {
-      if (!userId) {
-          setIsLoading(false);
-          return;
-      }
-      
-      try {
-        const today = getLocalTodayKey();
-        
-        // 0. Check for yesterday's streak (Retrospective Awarding)
-        await checkAndAwardStreak(userId, stepGoal);
-
-        // 1. Fetch Today's Current Progress
-        const { data: activity } = await supabase
-          .from('daily_activity')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('activity_date', today)
-          .maybeSingle();
-
-        if (activity) {
-          setSteps(activity.steps || 0);
-          setCalories(activity.calories_burned || 0);
-          setDistance(activity.distance_km || 0);
-          lastSyncValue.current = activity.steps || 0;
-        }
-
-        // 2. Fetch Profile Streak
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_streak')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (profile) {
-          setStreak(profile.current_streak || 0);
-        }
-
-        // 3. Fetch History (7 Days)
-        const { data: hist } = await supabase
-          .from('daily_activity')
-          .select('*')
-          .eq('user_id', userId)
-          .order('activity_date', { ascending: false })
-          .limit(7);
-        
-        setHistory(hist || []);
-
-        // 4. REALTIME LISTENER (The Sync Glue)
-        // If MapTrackingScreen updates the DB, this listener catches it and updates local state
-        // This effectively implements "Delta Logic" because subsequent local steps will start adding from this new base.
-        subscription = supabase
-          .channel('public:daily_activity')
-          .on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'daily_activity',
-              filter: `user_id=eq.${userId}`
-            },
-            (payload) => {
-              const newData = payload.new;
-              if (newData.activity_date === today) {
-                // Update if DB has more data (e.g. manual logs or other devices)
-                if (newData.steps > steps || newData.calories_burned > calories) {
-                    if (newData.steps > steps) {
-                        setSteps(newData.steps);
-                        setDistance(newData.distance_km);
-                        lastSyncValue.current = newData.steps;
-                    }
-                    // Always take higher calories (manual logs + steps)
-                    if (newData.calories_burned > calories) {
-                        setCalories(newData.calories_burned);
-                    }
-                }
-              }
-            }
-          )
-          .subscribe();
-
-      } catch (e) {
-        console.error("Initialization Error:", e);
-      } finally {
+  const loadSessionData = useCallback(async () => {
+    if (!userId) {
         setIsLoading(false);
+        return;
+    }
+    
+    try {
+      // 0. Check for yesterday's streak (Retrospective Awarding)
+      await checkAndAwardStreak(userId, stepGoal);
+
+      // 1. Fetch Dashboard Data (Today + History + Profile)
+      const dashboard = await fetchFullUserDashboard(userId);
+
+      if (dashboard) {
+        if (dashboard.activity) {
+          setSteps(dashboard.activity.steps || 0);
+          setCalories(dashboard.activity.caloriesBurned || 0);
+          setDistance(dashboard.activity.distanceKm || 0);
+          lastSyncValue.current = dashboard.activity.steps || 0;
+        }
+        
+        if (dashboard.profile) {
+          setStreak(dashboard.profile.currentStreak || 0);
+        }
+        
+        setHistory(dashboard.history || []);
       }
-    };
 
+    } catch (e) {
+      console.error("Initialization Error:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userId, stepGoal]);
+
+  // --- INITIALIZATION ---
+  useEffect(() => {
     loadSessionData();
-
-    return () => {
-      if (subscription) supabase.removeChannel(subscription);
-    };
-  }, [userId]); // Only run on mount or user change
+  }, [loadSessionData]); // Only run on mount or user/goal change
 
   // --- PERSISTENCE ENGINE (Debounced) ---
   useEffect(() => {
-    // Sync if steps changed OR calories changed significantly (to capture manual logs if we were the source, but here we are syncing TO db)
-    // Actually, if we update local state from DB, this effect runs.
-    // We need to ensure we don't overwrite DB with old data if we are lagging.
-    // But we just updated from DB, so we are current.
-    
     if (!userId) return;
-    
-    // Skip if nothing changed since last sync (approx)
-    // But calories might change without steps
-    // We track lastSyncValue for steps. We might need one for calories too?
-    // For now, let's just debounce.
     
     if (syncTimer.current) clearTimeout(syncTimer.current);
 
     syncTimer.current = setTimeout(async () => {
       // Standard Upsert for background tracking
-      await upsertDailyActivity(userId, steps, Math.floor(calories), parseFloat(distance.toFixed(3)));
+      await upsertDailyActivity(userId, getLocalTodayKey(), steps, Math.floor(calories), parseFloat(distance.toFixed(3)));
       
       // Check for streak update if goal met
       if (steps >= stepGoal) {
@@ -220,7 +152,7 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
     }
   };
 
-  return { steps, calories, distance, streak, history, isTracking, toggleTracking, error, isLoading };
+  return { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh: loadSessionData, error, isLoading };
 };
 
 export default useStepTracker;
