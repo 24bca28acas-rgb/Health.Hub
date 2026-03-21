@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ArrowLeft, User, Ruler, Weight, Activity, Target, CheckCircle, Loader2, AlertCircle, LogOut, Sparkles, Camera, BrainCircuit } from 'lucide-react';
 import { Gender, ActivityLevel, FitnessGoal, UserProfile, ActivityData } from '../types';
 import { completeOnboarding, DEFAULT_AVATAR, signOut, supabase } from '../services/storage';
+import GlowingButton from './GlowingButton';
 
 interface OnboardingScreenProps {
   user: any;
@@ -259,12 +260,12 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
                             transition={{ delay: 0.8 }}
                             className="pt-6"
                         >
-                            <button 
+                            <GlowingButton 
                                 onClick={nextStep} 
-                                className="w-full py-5 bg-white text-black font-black uppercase tracking-[0.2em] text-xs rounded-2xl flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-95 transition-all"
+                                className="w-full py-5"
                             >
-                                Initialize Protocol <ChevronRight size={18} />
-                            </button>
+                                Initialize Protocol <ChevronRight size={18} className="inline ml-2" />
+                            </GlowingButton>
                         </motion.div>
                     </motion.div>
                 )}

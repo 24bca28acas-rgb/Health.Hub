@@ -12,6 +12,7 @@ import {
 } from '../services/storage'; 
 import { Loader2, Eye, EyeOff, AlertCircle, User as UserIcon, Mail, Lock, CheckCircle, Camera, RefreshCw, ChevronRight, UserCircle2, Check, ArrowRight, Clock, DatabaseZap, UserPlus, ShieldAlert } from 'lucide-react';
 import Logo from './Logo';
+import GlowingButton from './GlowingButton';
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -466,16 +467,17 @@ const Auth: React.FC = () => {
                 </div>
                 
                 {/* 4. The 'Hero' Button */}
-                <button 
+                <GlowingButton 
+                  onClick={handleAuth}
                   disabled={isLoading || lockoutTimer > 0} 
-                  className="w-full py-5 bg-luxury-neon text-black/80 font-bold uppercase tracking-[1.5px] text-xs rounded-2xl shadow-[0_0_20px_2px_rgba(206,242,69,0.3)] hover:shadow-[0_0_30px_4px_rgba(206,242,69,0.4)] disabled:opacity-50 mt-6 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 border border-luxury-neon/20 font-cyber"
+                  className="w-full py-5 mt-6"
                 >
                    {isLoading ? (
                       <Loader2 className="animate-spin" size={18} />
                    ) : (
                       isLogin ? "Initialize Session" : "Join Network"
                    )}
-                </button>
+                </GlowingButton>
               </form>
             </motion.div>
           </div>

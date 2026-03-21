@@ -21,7 +21,113 @@ import WorkoutLab from './components/WorkoutLab';
 import Auth from './components/Auth';
 import { ViewState, ActivityData, FoodHistoryItem, UserMetrics } from './types';
 import useLocalStorage from './hooks/useLocalStorage';
-import useStepTracker from './hooks/useStepTracker';
+import { DailyActivityProvider, useDailyActivityData } from './contexts/DailyActivityContext';
+
+const MainContent: React.FC<{
+  session: any;
+  userProfile: any;
+  setUserProfile: any;
+  foodHistory: FoodHistoryItem[];
+  setFoodHistory: any;
+  bmiMetrics: UserMetrics;
+  setBmiMetrics: any;
+  adaptiveGoalsEnabled: boolean;
+  setAdaptiveGoalsEnabled: any;
+  currentView: ViewState;
+  setCurrentView: any;
+}> = ({ session, userProfile, setUserProfile, foodHistory, setFoodHistory, bmiMetrics, setBmiMetrics, adaptiveGoalsEnabled, setAdaptiveGoalsEnabled, currentView, setCurrentView }) => {
+  const { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh, isLoading: biometricLoading } = useDailyActivityData();
+
+  const handleAddToFoodHistory = (item: FoodHistoryItem) => {
+    setFoodHistory((prev: FoodHistoryItem[]) => [item, ...prev].slice(0, 5));
+  };
+
+  if (biometricLoading) {
+    return (
+      <div className="h-screen bg-black flex flex-col items-center justify-center">
+        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
+        <p className="text-emerald-500 font-mono text-xs tracking-widest uppercase animate-pulse">
+          Synchronizing Health Data...
+        </p>
+      </div>
+    );
+  }
+
+  const activityData: ActivityData = {
+    steps,
+    calories,
+    distance,
+    stepGoal: userProfile.goals?.stepGoal || 10000,
+    calorieGoal: userProfile.goals?.calorieGoal || 2000,
+    distanceGoal: 5.0,
+    history: []
+  };
+
+  const pageTransition = {
+    initial: { opacity: 0, x: 20 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -20 },
+    transition: { type: 'spring', damping: 25, stiffness: 200 }
+  };
+
+  return (
+    <div className="flex flex-col h-[100dvh] bg-black text-white relative overflow-hidden font-sans">
+      <main className="flex-1 relative w-full overflow-hidden">
+        <AnimatePresence mode="wait">
+          {currentView === ViewState.DASHBOARD && (
+            <motion.div key="dash" {...pageTransition} className="h-full w-full">
+              <Dashboard 
+                data={activityData} 
+                onUpdateGoals={() => {}} 
+                isTracking={isTracking} 
+                onToggleTracking={toggleTracking} 
+                onRefresh={refresh}
+                foodHistory={foodHistory}
+                adaptiveGoalsEnabled={adaptiveGoalsEnabled}
+                onToggleAdaptiveGoals={setAdaptiveGoalsEnabled}
+                streakValue={streak}
+                activityHistory={history}
+                userWeight={bmiMetrics.weight}
+                profile={userProfile}
+              />
+            </motion.div>
+          )}
+          {currentView === ViewState.CHAT && (
+            <motion.div key="chat" {...pageTransition} className="h-full w-full">
+              <ChatBot profile={userProfile} activity={activityData} />
+            </motion.div>
+          )}
+          {currentView === ViewState.FOOD_LENS && (
+            <motion.div key="lens" {...pageTransition} className="h-full w-full">
+              <FoodLens history={foodHistory} onAddToHistory={handleAddToFoodHistory} />
+            </motion.div>
+          )}
+          {currentView === ViewState.BMI_HUB && (
+            <motion.div key="bmi" {...pageTransition} className="h-full w-full">
+              <BMIHub />
+            </motion.div>
+          )}
+          {currentView === ViewState.MAP_TRACKER && (
+            <motion.div key="map" {...pageTransition} className="h-full w-full">
+              <MapTrackingScreen userHeight={bmiMetrics.height} userWeight={bmiMetrics.weight} setView={setCurrentView} />
+            </motion.div>
+          )}
+          {currentView === ViewState.PROFILE && (
+            <motion.div key="profile" {...pageTransition} className="h-full w-full">
+              <ProfileScreen onUpdateMetrics={setBmiMetrics} onUpdateProfile={setUserProfile} />
+            </motion.div>
+          )}
+          {currentView === ViewState.WORKOUT_LAB && (
+            <motion.div key="lab" {...pageTransition} className="h-full w-full">
+              <WorkoutLab metrics={userProfile.metrics} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+      <Navigation currentView={currentView} setView={setCurrentView} />
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
@@ -30,12 +136,6 @@ const App: React.FC = () => {
   
   const [networkError, setNetworkError] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
-
-  // Biometric Synchronization Hook
-  const { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh, isLoading: biometricLoading } = useStepTracker(
-    session?.user?.id || session?.user?.uid || null, 
-    userProfile?.goals?.stepGoal || 10000
-  );
 
   const [bmiMetrics, setBmiMetrics] = useLocalStorage<UserMetrics>('bmi_metrics', { height: 175, weight: 70 });
   const [foodHistory, setFoodHistory] = useLocalStorage<FoodHistoryItem[]>('food_history', []);
@@ -137,17 +237,13 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleAddToFoodHistory = (item: FoodHistoryItem) => {
-    setFoodHistory(prev => [item, ...prev].slice(0, 5));
-  };
-
   // 1. BLOCK EVERYTHING UNTIL LOADED
-  if (isAppLoading || biometricLoading) {
+  if (isAppLoading) {
     return (
       <div className="h-screen bg-black flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
         <p className="text-emerald-500 font-mono text-xs tracking-widest uppercase animate-pulse">
-          Synchronizing Health Data...
+          Initializing System...
         </p>
       </div>
     );
@@ -187,79 +283,22 @@ const App: React.FC = () => {
     );
   }
 
-  const activityData: ActivityData = {
-    steps,
-    calories,
-    distance,
-    stepGoal: userProfile.goals?.stepGoal || 10000,
-    calorieGoal: userProfile.goals?.calorieGoal || 2000,
-    distanceGoal: 5.0,
-    history: []
-  };
-
-  const pageTransition = {
-    initial: { opacity: 0, x: 20 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: -20 },
-    transition: { type: 'spring', damping: 25, stiffness: 200 }
-  };
-
   return (
-    <div className="flex flex-col h-[100dvh] bg-black text-white relative overflow-hidden font-sans">
-      <main className="flex-1 relative w-full overflow-hidden">
-        <AnimatePresence mode="wait">
-          {currentView === ViewState.DASHBOARD && (
-            <motion.div key="dash" {...pageTransition} className="h-full w-full">
-              <Dashboard 
-                data={activityData} 
-                onUpdateGoals={() => {}} 
-                isTracking={isTracking} 
-                onToggleTracking={toggleTracking} 
-                onRefresh={refresh}
-                foodHistory={foodHistory}
-                adaptiveGoalsEnabled={adaptiveGoalsEnabled}
-                onToggleAdaptiveGoals={setAdaptiveGoalsEnabled}
-                streakValue={streak}
-                activityHistory={history}
-                userWeight={bmiMetrics.weight}
-                profile={userProfile}
-              />
-            </motion.div>
-          )}
-          {currentView === ViewState.CHAT && (
-            <motion.div key="chat" {...pageTransition} className="h-full w-full">
-              <ChatBot profile={userProfile} activity={activityData} />
-            </motion.div>
-          )}
-          {currentView === ViewState.FOOD_LENS && (
-            <motion.div key="lens" {...pageTransition} className="h-full w-full">
-              <FoodLens history={foodHistory} onAddToHistory={handleAddToFoodHistory} />
-            </motion.div>
-          )}
-          {currentView === ViewState.BMI_HUB && (
-            <motion.div key="bmi" {...pageTransition} className="h-full w-full">
-              <BMIHub />
-            </motion.div>
-          )}
-          {currentView === ViewState.MAP_TRACKER && (
-            <motion.div key="map" {...pageTransition} className="h-full w-full">
-              <MapTrackingScreen userHeight={bmiMetrics.height} userWeight={bmiMetrics.weight} setView={setCurrentView} />
-            </motion.div>
-          )}
-          {currentView === ViewState.PROFILE && (
-            <motion.div key="profile" {...pageTransition} className="h-full w-full">
-              <ProfileScreen onUpdateMetrics={setBmiMetrics} onUpdateProfile={setUserProfile} />
-            </motion.div>
-          )}
-          {currentView === ViewState.WORKOUT_LAB && (
-            <motion.div key="lab" {...pageTransition} className="h-full w-full">
-              <WorkoutLab metrics={userProfile.metrics} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-      <Navigation currentView={currentView} setView={setCurrentView} />
-    </div>
+    <DailyActivityProvider userId={session.user.id || session.user.uid} stepGoal={userProfile.goals?.stepGoal || 10000}>
+      <MainContent 
+        session={session}
+        userProfile={userProfile}
+        setUserProfile={setUserProfile}
+        foodHistory={foodHistory}
+        setFoodHistory={setFoodHistory}
+        bmiMetrics={bmiMetrics}
+        setBmiMetrics={setBmiMetrics}
+        adaptiveGoalsEnabled={adaptiveGoalsEnabled}
+        setAdaptiveGoalsEnabled={setAdaptiveGoalsEnabled}
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+      />
+    </DailyActivityProvider>
   );
 };
 

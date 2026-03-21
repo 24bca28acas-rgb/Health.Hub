@@ -130,45 +130,16 @@ export const fetchFullUserDashboard = async (userId: string) => {
   const profile = profiles[userId];
   if (!profile) return null;
   
-  const todayKey = new Date().toISOString().split('T')[0];
+  const todayKey = getLocalTodayKey();
   const activities = getStorageItem<DailyActivityDB[]>('daily_activity') || [];
-  let activity = activities.find(a => a.userId === userId && a.activityDate === todayKey) || null;
-  
-  // Aggregate activity_logs into today's calories
-  const activityLogs = getStorageItem<any[]>('activity_logs') || [];
-  const todayLogs = activityLogs.filter(log => 
-    log.userId === userId && 
-    log.createdAt && 
-    log.createdAt.startsWith(todayKey)
-  );
-  
-  const loggedCalories = todayLogs.reduce((sum, log) => sum + (log.caloriesBurned || 0), 0);
-  
-  if (activity) {
-    activity = {
-      ...activity,
-      caloriesBurned: (activity.caloriesBurned || 0) + loggedCalories
-    };
-  } else if (loggedCalories > 0) {
-    // Create a temporary activity object if none exists but we have logs
-    activity = {
-      id: 'temp-' + todayKey,
-      userId,
-      activityDate: todayKey,
-      steps: 0,
-      caloriesBurned: loggedCalories,
-      distanceKm: 0,
-      isTargetMet: false,
-      updatedAt: new Date().toISOString()
-    };
-  }
+  const activity = activities.find(a => a.userId === userId && a.activityDate === todayKey) || null;
   
   const history = activities
     .filter(a => a.userId === userId)
     .sort((a, b) => b.activityDate.localeCompare(a.activityDate))
     .slice(0, 7);
   
-  return { profile, activity, history, activityLogs: todayLogs };
+  return { profile, activity, history };
 };
 
 export const loadProfile = async (userId: string) => {
@@ -342,7 +313,7 @@ export const performMaintenance = (force: boolean = false) => {
 };
 
 export const getLocalTodayKey = () => {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toLocaleDateString('en-CA');
 };
 
 export const upsertDailyActivity = async (userId: string, date: string, steps: number, calories: number, distance: number) => {

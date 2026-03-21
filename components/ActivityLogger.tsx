@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Activity, Flame, Clock, Zap, Save, Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../services/storage';
+import { useDailyActivityData } from '../contexts/DailyActivityContext';
 
 interface ActivityLoggerProps {
   userId: string;
@@ -38,6 +39,8 @@ export const ActivityLogger: React.FC<ActivityLoggerProps> = ({ userId, userWeig
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  const { calories: currentCalories, updateOptimistically } = useDailyActivityData();
+
   // 2. Dynamic Calorie Calculation
   useEffect(() => {
     if (isManualCalories) return;
@@ -64,6 +67,9 @@ export const ActivityLogger: React.FC<ActivityLoggerProps> = ({ userId, userWeig
     setError(null);
 
     try {
+      // Optimistic UI Update
+      updateOptimistically({ calories: currentCalories + calories });
+
       const { error: insertError } = await supabase
         .from('activity_logs')
         .insert({
@@ -86,6 +92,8 @@ export const ActivityLogger: React.FC<ActivityLoggerProps> = ({ userId, userWeig
 
     } catch (e: any) {
       console.error("❌ LOGGING ERROR:", e);
+      // Revert optimistic update on error
+      updateOptimistically({ calories: currentCalories });
       setError(e.message || "Failed to sync with neural network.");
     } finally {
       setIsSubmitting(false);

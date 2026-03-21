@@ -2,13 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ActivityData, FoodHistoryItem } from '../types';
-import { Flame, Target, Sparkles, Play, Pause, Plus, Droplets, Zap, Footprints, Settings2, Check, Pencil } from 'lucide-react';
+import { Flame, Target, Sparkles, Play, Pause, Plus, Droplets, Zap, Footprints, Settings2, Check, Pencil, Route } from 'lucide-react';
 import StreakWidget from './StreakWidget';
 import StreakHistory from './StreakHistory';
 import { supabase } from '../services/storage';
 import { getFastHealthTip } from '../services/geminiService';
 import Logo from './Logo';
 import { ActivityLogger } from './ActivityLogger';
+import GlowingButton from './GlowingButton';
 
 interface DashboardProps {
   data: ActivityData;
@@ -248,18 +249,18 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
         <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Identity Required</h2>
         <p className="text-gray-400 text-sm max-w-xs">Your biometric profile is incomplete. Please finalize your setup to access the Performance Hub.</p>
-        <button 
+        <GlowingButton 
           onClick={() => window.location.reload()} 
-          className="px-8 py-3 bg-luxury-neon text-black font-black uppercase tracking-widest text-xs rounded-full shadow-[0_0_20px_rgba(206,242,69,0.3)]"
+          className="px-10 py-4"
         >
           Initialize Setup
-        </button>
+        </GlowingButton>
       </div>
     );
   }
 
   const caloriesConsumed = foodHistory.reduce((acc, item) => acc + (item.analysis?.macros?.calories || 0), 0);
-  const caloriesProgress = (caloriesConsumed / data.calorieGoal) * 100;
+  const activeCaloriesProgress = (data.calories / data.calorieGoal) * 100;
   const stepsProgress = (data.steps / data.stepGoal) * 100;
   const hydrationProgress = (hydration / hydrationGoal) * 100;
 
@@ -295,11 +296,11 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* Concentric HUD */}
       <div className="flex flex-col items-center justify-center py-10 relative">
         <ConcentricHUD 
-          caloriesProgress={caloriesProgress}
+          caloriesProgress={activeCaloriesProgress}
           stepsProgress={stepsProgress}
           hydrationProgress={hydrationProgress}
-          primaryValue={caloriesConsumed.toLocaleString()}
-          primaryLabel="KCAL INTAKE"
+          primaryValue={Math.floor(data.calories).toLocaleString()}
+          primaryLabel="ACTIVE KCAL"
           goalLabel={`OUT OF ${data.calorieGoal.toLocaleString()} GOAL`}
         />
         
@@ -441,7 +442,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <motion.div 
             whileTap={{ scale: 0.98 }}
             onClick={() => setShowActivityLogger(true)}
@@ -451,12 +452,18 @@ const Dashboard: React.FC<DashboardProps> = ({
               <Plus size={14} className="text-luxury-neon" />
             </div>
             <Flame size={20} className="text-luxury-neon mb-3" />
-            <span className="text-2xl font-black text-white">{Math.floor(data.calories)}</span>
+            <span className="text-2xl font-black text-white">{Math.floor(data.calories).toLocaleString()}</span>
             <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Active KCAL</span>
           </motion.div>
-          
+
           <div className="glass-panel p-6 rounded-[2.5rem] border border-white/5 bg-white/[0.02] backdrop-blur-xl flex flex-col items-center">
             <Footprints size={20} className="text-luxury-neon mb-3" />
+            <span className="text-2xl font-black text-white">{(data.steps || 0).toLocaleString()}</span>
+            <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Total Steps</span>
+          </div>
+          
+          <div className="glass-panel p-6 rounded-[2.5rem] border border-white/5 bg-white/[0.02] backdrop-blur-xl flex flex-col items-center">
+            <Route size={20} className="text-luxury-neon mb-3" />
             <span className="text-2xl font-black text-white">{data.distance.toFixed(2)}</span>
             <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Distance KM</span>
           </div>

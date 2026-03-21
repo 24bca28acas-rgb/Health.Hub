@@ -13,6 +13,7 @@ interface StepTrackerHook {
   refresh: () => Promise<void>;
   error: string | null;
   isLoading: boolean;
+  updateOptimistically: (updates: Partial<{ steps: number; calories: number; distance: number; streak: number }>) => void;
 }
 
 const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHook => {
@@ -152,7 +153,14 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
     }
   };
 
-  return { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh: loadSessionData, error, isLoading };
+  const updateOptimistically = useCallback((updates: Partial<{ steps: number; calories: number; distance: number; streak: number }>) => {
+    if (updates.steps !== undefined) setSteps(updates.steps);
+    if (updates.calories !== undefined) setCalories(updates.calories);
+    if (updates.distance !== undefined) setDistance(updates.distance);
+    if (updates.streak !== undefined) setStreak(updates.streak);
+  }, []);
+
+  return { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh: loadSessionData, error, isLoading, updateOptimistically };
 };
 
 export default useStepTracker;

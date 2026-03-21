@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { Activity } from 'lucide-react';
 import { performMaintenance } from './services/storage';
+import { DailyActivityProvider } from './contexts/DailyActivityContext';
 
 /**
  * ELITE BOOT SEQUENCE
