@@ -6,6 +6,8 @@ interface StepTrackerHook {
   steps: number;
   calories: number;
   distance: number;
+  hydration: number;
+  hydrationGoal: number;
   streak: number;
   history: any[];
   isTracking: boolean;
@@ -13,13 +15,15 @@ interface StepTrackerHook {
   refresh: () => Promise<void>;
   error: string | null;
   isLoading: boolean;
-  updateOptimistically: (updates: Partial<{ steps: number; calories: number; distance: number; streak: number }>) => void;
+  updateOptimistically: (updates: Partial<{ steps: number; calories: number; distance: number; hydration: number; streak: number }>) => void;
 }
 
 const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHook => {
   const [steps, setSteps] = useState(0);
   const [calories, setCalories] = useState(0);
   const [distance, setDistance] = useState(0);
+  const [hydration, setHydration] = useState(0);
+  const [hydrationGoal, setHydrationGoal] = useState(2.5);
   const [streak, setStreak] = useState(0);
   const [history, setHistory] = useState<any[]>([]);
   const [isTracking, setIsTracking] = useState(false);
@@ -51,6 +55,8 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
           setSteps(dashboard.activity.steps || 0);
           setCalories(dashboard.activity.caloriesBurned || 0);
           setDistance(dashboard.activity.distanceKm || 0);
+          setHydration(dashboard.activity.hydration || 0);
+          setHydrationGoal(dashboard.activity.hydrationGoal || 2.5);
           lastSyncValue.current = dashboard.activity.steps || 0;
         }
         
@@ -81,7 +87,7 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
 
     syncTimer.current = setTimeout(async () => {
       // Standard Upsert for background tracking
-      await upsertDailyActivity(userId, getLocalTodayKey(), steps, Math.floor(calories), parseFloat(distance.toFixed(3)));
+      await upsertDailyActivity(userId, getLocalTodayKey(), steps, Math.floor(calories), parseFloat(distance.toFixed(3)), hydration, hydrationGoal);
       
       // Check for streak update if goal met
       if (steps >= stepGoal) {
@@ -93,7 +99,7 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
     }, 1500); // 1.5s debounce
 
     return () => { if (syncTimer.current) clearTimeout(syncTimer.current); };
-  }, [steps, userId, calories, distance, stepGoal]);
+  }, [steps, userId, calories, distance, stepGoal, hydration, hydrationGoal]);
 
   // --- SENSOR LOGIC ---
   const handleMotion = useCallback((event: DeviceMotionEvent) => {
@@ -153,14 +159,15 @@ const useStepTracker = (userId: string | null, stepGoal: number): StepTrackerHoo
     }
   };
 
-  const updateOptimistically = useCallback((updates: Partial<{ steps: number; calories: number; distance: number; streak: number }>) => {
+  const updateOptimistically = useCallback((updates: Partial<{ steps: number; calories: number; distance: number; hydration: number; streak: number }>) => {
     if (updates.steps !== undefined) setSteps(updates.steps);
     if (updates.calories !== undefined) setCalories(updates.calories);
     if (updates.distance !== undefined) setDistance(updates.distance);
+    if (updates.hydration !== undefined) setHydration(updates.hydration);
     if (updates.streak !== undefined) setStreak(updates.streak);
   }, []);
 
-  return { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh: loadSessionData, error, isLoading, updateOptimistically };
+  return { steps, calories, distance, hydration, hydrationGoal, streak, history, isTracking, toggleTracking, refresh: loadSessionData, error, isLoading, updateOptimistically };
 };
 
 export default useStepTracker;

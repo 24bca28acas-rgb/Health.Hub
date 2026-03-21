@@ -3,9 +3,11 @@ export interface ActivityData {
   steps: number;
   calories: number;
   distance: number;
+  hydration: number;
   stepGoal: number;
   calorieGoal: number;
   distanceGoal: number;
+  hydrationGoal: number;
   history: { day: string; steps: number }[];
 }
 
@@ -18,6 +20,8 @@ export interface DailyActivityDB {
   steps: number;
   caloriesBurned: number;
   distanceKm: number;
+  hydration?: number;
+  hydrationGoal?: number;
   isTargetMet: boolean;
   streakAwarded?: boolean; // New field to prevent double-counting streaks
   updatedAt: string;

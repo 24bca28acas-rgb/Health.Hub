@@ -144,10 +144,11 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
         if (activityLevel === 'Sedentary') stepGoal = 6000;
 
         const activityGoals: ActivityData = {
-            steps: 0, calories: 0, distance: 0, history: [],
+            steps: 0, calories: 0, distance: 0, hydration: 0, history: [],
             stepGoal: stepGoal,
             calorieGoal: Math.round(calorieTarget),
-            distanceGoal: parseFloat((stepGoal * 0.000762).toFixed(1))
+            distanceGoal: parseFloat((stepGoal * 0.000762).toFixed(1)),
+            hydrationGoal: 2.5
         };
 
         // 4. Save to Database

@@ -36,7 +36,7 @@ const MainContent: React.FC<{
   currentView: ViewState;
   setCurrentView: any;
 }> = ({ session, userProfile, setUserProfile, foodHistory, setFoodHistory, bmiMetrics, setBmiMetrics, adaptiveGoalsEnabled, setAdaptiveGoalsEnabled, currentView, setCurrentView }) => {
-  const { steps, calories, distance, streak, history, isTracking, toggleTracking, refresh, isLoading: biometricLoading } = useDailyActivityData();
+  const { steps, calories, distance, hydration, hydrationGoal, streak, history, isTracking, toggleTracking, refresh, isLoading: biometricLoading } = useDailyActivityData();
 
   const handleAddToFoodHistory = (item: FoodHistoryItem) => {
     setFoodHistory((prev: FoodHistoryItem[]) => [item, ...prev].slice(0, 5));
@@ -57,9 +57,11 @@ const MainContent: React.FC<{
     steps,
     calories,
     distance,
+    hydration,
     stepGoal: userProfile.goals?.stepGoal || 10000,
     calorieGoal: userProfile.goals?.calorieGoal || 2000,
     distanceGoal: 5.0,
+    hydrationGoal,
     history: []
   };
 

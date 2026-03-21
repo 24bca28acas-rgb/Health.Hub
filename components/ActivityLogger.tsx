@@ -255,10 +255,13 @@ export const ActivityLogger: React.FC<ActivityLoggerProps> = ({ userId, userWeig
 
         {/* Sticky Action Footer */}
         <div className="sticky bottom-0 w-full p-6 bg-[#121212]/90 backdrop-blur-md border-t border-white/5 z-10 shrink-0">
-          <button 
+          <motion.button 
             onClick={handleLogWorkout}
             disabled={isSubmitting || showSuccess}
-            className="w-full py-5 bg-[#CCFF00] text-black font-black uppercase tracking-[0.3em] text-xs rounded-2xl shadow-[0_0_30px_rgba(204,255,0,0.2)] hover:shadow-[0_0_40px_rgba(204,255,0,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-3 font-cyber"
+            className="w-full bg-[#121212] text-[#CCFF00] border border-[#CCFF00]/50 px-6 py-5 rounded-2xl font-black uppercase tracking-[0.3em] text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-3 font-cyber"
+            initial={{ boxShadow: "0px 0px 0px 0px rgba(206, 242, 69, 0)" }}
+            whileHover={{ boxShadow: "0px 0px 20px 0px rgba(206, 242, 69, 0.4)" }}
+            transition={{ duration: 0.3 }}
           >
             {isSubmitting ? (
               <>
@@ -270,7 +273,7 @@ export const ActivityLogger: React.FC<ActivityLoggerProps> = ({ userId, userWeig
                 <Save size={18} /> LOG WORKOUT
               </>
             )}
-          </button>
+          </motion.button>
         </div>
       </motion.div>
     </div>

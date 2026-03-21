@@ -7,6 +7,7 @@ import StreakWidget from './StreakWidget';
 import StreakHistory from './StreakHistory';
 import { supabase } from '../services/storage';
 import { getFastHealthTip } from '../services/geminiService';
+import { useDailyActivityData } from '../contexts/DailyActivityContext';
 import Logo from './Logo';
 import { ActivityLogger } from './ActivityLogger';
 import GlowingButton from './GlowingButton';
@@ -122,36 +123,113 @@ const ProgressBar: React.FC<{ label: string; value: React.ReactNode; progress: n
 );
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-  data, onToggleTracking, isTracking, onUpdateGoals, onRefresh, foodHistory = [], streakValue = 0, activityHistory = [], userWeight = 70, profile: initialProfile
+  data, onToggleTracking, isTracking: isTrackingProp, onUpdateGoals, onRefresh, foodHistory = [], streakValue = 0, activityHistory = [], userWeight = 70, profile: initialProfile
 }) => {
+  const { 
+    steps, 
+    calories, 
+    distance, 
+    hydration, 
+    hydrationGoal, 
+    stepGoal, 
+    isTracking, 
+    toggleTracking, 
+    refresh, 
+    updateOptimistically 
+  } = useDailyActivityData();
+
   const [showHistory, setShowHistory] = useState(false);
   const [showActivityLogger, setShowActivityLogger] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [aiTip, setAiTip] = useState<string>("Initializing Neural Insights...");
   const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
   
-  // Mock hydration for the UI as it's not in ActivityData yet
-  const [hydration, setHydration] = useState(0);
-  const [hydrationGoal, setHydrationGoal] = useState(2.5);
   const [isEditing, setIsEditing] = useState(false);
   const [isManualHydration, setIsManualHydration] = useState(false);
   const [manualHydrationValue, setManualHydrationValue] = useState("");
   const [editedGoals, setEditedGoals] = useState({
-    stepGoal: data.stepGoal,
-    hydrationGoal: 2.5,
+    stepGoal: stepGoal,
+    hydrationGoal: hydrationGoal,
     calorieGoal: data.calorieGoal
   });
 
-  const addHydration = (amountL: number) => {
-    setHydration(prev => parseFloat((prev + amountL).toFixed(2)));
+  const addHydration = async (amountL: number) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    
+    const userId = session.user.id;
+    const today = new Date().toLocaleDateString('en-CA');
+    const optimisticNewTotal = parseFloat((hydration + amountL).toFixed(2));
+
+    // 1. Optimistic Update
+    updateOptimistically({ hydration: optimisticNewTotal });
+
+    try {
+      // 2. Fetch First (Safest Route)
+      const { data: currentData } = await supabase
+        .from('daily_activity')
+        .select('hydration')
+        .eq('user_id', userId)
+        .eq('date', today)
+        .maybeSingle();
+
+      const currentHydration = currentData?.hydration || 0;
+      const newTotal = parseFloat((currentHydration + amountL).toFixed(2));
+
+      // 3. Upsert
+      const { error } = await supabase
+        .from('daily_activity')
+        .upsert({
+          user_id: userId,
+          date: today,
+          hydration: newTotal,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,date' });
+
+      if (error) throw error;
+      
+      // Sync local state with actual total if different
+      if (newTotal !== optimisticNewTotal) {
+        updateOptimistically({ hydration: newTotal });
+      }
+    } catch (e) {
+      console.error("Hydration sync failed:", e);
+      // Revert on failure
+      updateOptimistically({ hydration: hydration });
+      alert("Failed to sync hydration. Please try again.");
+    }
   };
 
-  const handleManualHydrationSubmit = () => {
+  const handleManualHydrationSubmit = async () => {
     const val = parseFloat(manualHydrationValue);
-    if (!isNaN(val)) {
-      setHydration(val);
-      setIsManualHydration(false);
-      setManualHydrationValue("");
+    if (isNaN(val)) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+
+    const userId = session.user.id;
+    const today = new Date().toLocaleDateString('en-CA');
+
+    // Optimistic Update
+    updateOptimistically({ hydration: val });
+    setIsManualHydration(false);
+    setManualHydrationValue("");
+
+    try {
+      const { error } = await supabase
+        .from('daily_activity')
+        .upsert({
+          user_id: userId,
+          date: today,
+          hydration: val,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,date' });
+
+      if (error) throw error;
+    } catch (e) {
+      console.error("Manual hydration sync failed:", e);
+      updateOptimistically({ hydration: hydration });
+      alert("Failed to sync hydration. Please try again.");
     }
   };
 
@@ -201,7 +279,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       stepGoal: editedGoals.stepGoal,
       calorieGoal: editedGoals.calorieGoal
     });
-    setHydrationGoal(editedGoals.hydrationGoal);
+    updateOptimistically({ hydrationGoal: editedGoals.hydrationGoal });
     setIsEditing(false);
 
     // SUPABASE INTEGRATION HOOK:

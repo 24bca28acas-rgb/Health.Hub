@@ -1,5 +1,9 @@
 
+import { createClient } from '@supabase/supabase-js';
 import { ActivityData, UserMetrics, UserProfile, DailyActivityDB, FoodLogDB, ChatHistoryDB, SavedWorkoutDB, WorkoutPlan } from '../types';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // --- MOCK USER TYPE ---
 export interface User {
@@ -126,6 +130,43 @@ export const getSession = () => {
 // --- DATABASE FUNCTIONS ---
 
 export const fetchFullUserDashboard = async (userId: string) => {
+  // If real Supabase is connected, fetch from there
+  if (supabase.from) {
+    try {
+      const todayKey = getLocalTodayKey();
+      
+      const [profileRes, activityRes, historyRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+        supabase.from('daily_activity').select('*').eq('user_id', userId).eq('date', todayKey).maybeSingle(),
+        supabase.from('daily_activity').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(7)
+      ]);
+
+      if (profileRes.data) {
+        // Map Supabase fields back to our local types if necessary
+        const profile = profileRes.data;
+        const activity = activityRes.data ? {
+          ...activityRes.data,
+          userId: activityRes.data.user_id,
+          activityDate: activityRes.data.date,
+          caloriesBurned: activityRes.data.calories_burned,
+          distanceKm: activityRes.data.distance_km
+        } : null;
+        const history = historyRes.data ? historyRes.data.map((h: any) => ({
+          ...h,
+          userId: h.user_id,
+          activityDate: h.date,
+          caloriesBurned: h.calories_burned,
+          distanceKm: h.distance_km
+        })) : [];
+
+        return { profile, activity, history };
+      }
+    } catch (e) {
+      console.error("Supabase fetch failed, falling back to mock", e);
+    }
+  }
+
+  // Fallback to mock
   const profiles = getStorageItem<Record<string, UserProfile>>('profiles') || {};
   const profile = profiles[userId];
   if (!profile) return null;
@@ -316,7 +357,7 @@ export const getLocalTodayKey = () => {
   return new Date().toLocaleDateString('en-CA');
 };
 
-export const upsertDailyActivity = async (userId: string, date: string, steps: number, calories: number, distance: number) => {
+export const upsertDailyActivity = async (userId: string, date: string, steps: number, calories: number, distance: number, hydration?: number, hydrationGoal?: number) => {
   const activities = getStorageItem<DailyActivityDB[]>('daily_activity') || [];
   const index = activities.findIndex(a => a.userId === userId && a.activityDate === date);
   
@@ -326,6 +367,8 @@ export const upsertDailyActivity = async (userId: string, date: string, steps: n
       steps,
       caloriesBurned: calories,
       distanceKm: distance,
+      hydration: hydration !== undefined ? hydration : activities[index].hydration,
+      hydrationGoal: hydrationGoal !== undefined ? hydrationGoal : activities[index].hydrationGoal,
       updatedAt: new Date().toISOString()
     };
   } else {
@@ -336,11 +379,31 @@ export const upsertDailyActivity = async (userId: string, date: string, steps: n
       steps,
       caloriesBurned: calories,
       distanceKm: distance,
+      hydration: hydration || 0,
+      hydrationGoal: hydrationGoal || 2.5,
       isTargetMet: false,
       updatedAt: new Date().toISOString()
     });
   }
   setStorageItem('daily_activity', activities);
+
+  // If real Supabase is connected, sync there too
+  if (supabase.from) {
+    try {
+      await supabase.from('daily_activity').upsert({
+        user_id: userId,
+        date: date,
+        steps,
+        calories_burned: calories,
+        distance_km: distance,
+        hydration: hydration || 0,
+        hydration_goal: hydrationGoal || 2.5,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,date' });
+    } catch (e) {
+      console.error("Supabase sync failed", e);
+    }
+  }
 };
 
 export const processStreakUpdate = async (userId: string, steps: number, stepGoal: number): Promise<number | void> => {
@@ -421,7 +484,10 @@ export const deleteUserAccount = async () => {
 };
 
 // --- LEGACY SUPABASE OBJECT FOR COMPATIBILITY ---
-export const supabase = {
+// Initialize real Supabase client if credentials exist
+export const supabase = (supabaseUrl && supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : {
   auth: {
     getUser: async () => {
       return { data: { user: currentUser ? { id: currentUser.uid, ...currentUser } : null } };
@@ -561,7 +627,7 @@ export const supabase = {
     }
     return { error: new Error('Not implemented') };
   }
-};
+} as any;
 
 export const db = {
   // Mock db object if needed by other components
