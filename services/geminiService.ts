@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type, Content, ThinkingLevel } from "@google/genai";
 import { FoodAnalysis, UserMetrics, ActivityData, WorkoutPlan, UserProfile } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // --- TYPES ---
 
@@ -90,15 +90,11 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 export const getFastHealthTip = async (userStats: string, context: string = "175cm, 70kg, Active") => {
   return withRetry(async () => {
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-flash-lite-latest',
-        contents: `Persona: ELITE COACH. User Context: ${context}. Give a 1-sentence luxury fitness tip for: ${userStats}.`,
-      });
-      return response.text || "Stay elite.";
-    } catch (error) {
-      return "Optimizing performance...";
-    }
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.1-flash-lite-preview',
+      contents: `Persona: ELITE COACH. User Context: ${context}. Give a 1-sentence luxury fitness tip for: ${userStats}.`,
+    });
+    return response.text || "Stay elite.";
   });
 };
 
@@ -149,13 +145,18 @@ Today's Activity: ${activity.steps} steps, ${activity.calories} calories.`;
     config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
   }
 
+  console.log(`[Elite Coach] Initializing stream with model: ${primaryModel}, thinking: ${isThinkingMode}`);
+
   try {
-    return await ai.models.generateContentStream({ 
+    const stream = await ai.models.generateContentStream({ 
       model: primaryModel, 
       config, 
-      contents: [{ role: 'user', parts: [{ text: message }] }]
+      contents: [...history, { role: 'user', parts: [{ text: message }] }]
     });
+    console.log(`[Elite Coach] Stream object received.`);
+    return stream;
   } catch (error: any) {
+    console.error(`[Elite Coach] Stream initialization failed:`, error);
     return handleGenAIError(error);
   }
 };

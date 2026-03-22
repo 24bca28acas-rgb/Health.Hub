@@ -14,7 +14,9 @@ export default function GlowingButton({ onClick, children, className = '', disab
       onClick={(e) => onClick?.(e as any)}
       disabled={disabled}
       className={`bg-[#121212] text-[#CCFF00] border border-[#CCFF00]/50 px-6 py-3 rounded-2xl font-black uppercase tracking-[0.2em] text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-      initial={{ boxShadow: "0px 0px 0px 0px rgba(206, 242, 69, 0)" }}
+      initial={{ 
+        boxShadow: "0px 0px 0px 0px rgba(206, 242, 69, 0)" 
+      }}
       whileHover={!disabled ? { 
         boxShadow: "0px 0px 20px 0px rgba(206, 242, 69, 0.4)",
         borderColor: "rgba(206, 242, 69, 0.8)"

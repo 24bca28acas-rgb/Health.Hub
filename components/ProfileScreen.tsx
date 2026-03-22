@@ -1,11 +1,13 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Mail, Weight, Ruler, Calendar, Activity, LogOut, Edit3, Save, X, Camera, Loader2, AlertCircle, CheckCircle, Trash2, AlertTriangle, ChevronRight, RefreshCw } from 'lucide-react';
+import { User, Mail, Weight, Ruler, Calendar, Activity, LogOut, Edit3, Save, X, Camera, Loader2, AlertCircle, CheckCircle, Trash2, AlertTriangle, ChevronRight, RefreshCw, RotateCw } from 'lucide-react';
+import AvatarEditor from 'react-avatar-editor';
 import { UserProfile, UserMetrics } from '../types';
-import { signOut, updateProfile, updateUserMetrics, supabase, DEFAULT_AVATAR, loadProfile } from '../services/storage';
+import { signOut, updateProfile, updateUserMetrics, supabase, DEFAULT_AVATAR, loadProfile, uploadProfilePhoto, deleteProfilePhoto } from '../services/storage';
 
 interface ProfileScreenProps {
+  user: any;
   onUpdateMetrics: (metrics: UserMetrics) => void;
   onUpdateProfile?: (profile: UserProfile) => void;
 }
@@ -16,7 +18,7 @@ interface SnackBarState {
     type: 'success' | 'error';
 }
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdateProfile }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ user: currentUser, onUpdateMetrics, onUpdateProfile }) => {
   // --- REAL DATA STATE ---
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -29,9 +31,20 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
   const [tempMetrics, setTempMetrics] = useState<UserMetrics>({ height: 0, weight: 0 });
   const [tempGoals, setTempGoals] = useState({ stepGoal: 10000, calorieGoal: 2000, distanceGoal: 5.0 });
   const [tempName, setTempName] = useState('');
-  const [tempAvatar, setTempAvatar] = useState(DEFAULT_AVATAR);
+  
+  // --- PHOTO EDITOR STATE ---
+  const [userPhotoUrl, setUserPhotoUrl] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorScale, setEditorScale] = useState(1);
+  const [editorRotate, setEditorRotate] = useState(0);
+  const [editorBrightness, setEditorBrightness] = useState(100);
+  const [editorContrast, setEditorContrast] = useState(100);
+  const [editorSaturation, setEditorSaturation] = useState(100);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<any>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [snackBar, setSnackBar] = useState<SnackBarState>({ show: false, message: '', type: 'success' });
 
@@ -53,40 +66,61 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
   };
 
   // --- FETCH REAL DATA (React "initState") ---
-  const fetchProfileData = async () => {
-    setLoading(true);
+  const mapDatabaseProfileToState = (data: any) => {
+    const mappedProfile: UserProfile = {
+      id: data.id,
+      name: data.name || 'Elite Member',
+      email: data.email || '',
+      avatarUrl: data.avatarUrl || DEFAULT_AVATAR,
+      primary_goal: data.primary_goal,
+      metrics: {
+        height: data.metrics?.height || 0,
+        weight: data.metrics?.weight || 0,
+        dob: data.metrics?.dob || '',
+        age: data.metrics?.age || calculateAge(data.metrics?.dob),
+        activityLevel: data.metrics?.activityLevel || 'Moderately Active',
+        fitnessGoal: data.metrics?.fitnessGoal || 'Maintain'
+      },
+      goals: {
+        stepGoal: data.goals?.stepGoal || 10000,
+        calorieGoal: data.goals?.calorieGoal || 2000,
+        distanceGoal: data.goals?.distanceGoal || 5.0
+      }
+    };
+
+    const metrics: UserMetrics = {
+      height: data.metrics?.height || 0,
+      weight: data.metrics?.weight || 0,
+      dob: data.metrics?.dob || '',
+      age: data.metrics?.age || calculateAge(data.metrics?.dob),
+      activityLevel: data.metrics?.activityLevel || 'Moderately Active',
+      fitnessGoal: data.metrics?.fitnessGoal || 'Maintain'
+    };
+
+    return { mappedProfile, metrics };
+  };
+
+  const fetchProfileData = async (isMounted = true) => {
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
+        console.warn("Profile fetch timed out, forcing loading state to false");
+        setLoading(false);
+      }
+    }, 8000);
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No authenticated session.");
+      // Use the passed user prop instead of fetching it again
+      if (!currentUser?.id) {
+        if (isMounted) setLoading(false);
+        return;
+      }
 
-      const data = await loadProfile(user.id);
+      if (isMounted) setLoading(true); // Start loading
 
-      if (data) {
-        // Map database fields to local profile state
-        const mappedProfile: UserProfile = {
-          id: data.id,
-          name: data.name || 'Elite Member',
-          email: data.email || '',
-          avatarUrl: data.avatarUrl || DEFAULT_AVATAR,
-          primary_goal: data.primary_goal, // Preserving for routing evaluation
-          metrics: {
-            height: data.metrics?.height || 0,
-            weight: data.metrics?.weight || 0,
-            dob: data.metrics?.dob || '',
-            age: data.metrics?.age || calculateAge(data.metrics?.dob),
-            activityLevel: data.metrics?.activityLevel || 'Moderately Active',
-            fitnessGoal: data.metrics?.fitnessGoal || 'Maintain'
-          }
-        };
+      const data = await loadProfile(currentUser.id);
 
-        const metrics: UserMetrics = {
-          height: data.metrics?.height || 0,
-          weight: data.metrics?.weight || 0,
-          dob: data.metrics?.dob || '',
-          age: data.metrics?.age || calculateAge(data.metrics?.dob),
-          activityLevel: data.metrics?.activityLevel || 'Moderately Active',
-          fitnessGoal: data.metrics?.fitnessGoal || 'Maintain'
-        };
+      if (data && isMounted) {
+        const { mappedProfile, metrics } = mapDatabaseProfileToState(data);
 
         setProfile(mappedProfile);
         setDbMetrics(metrics);
@@ -97,26 +131,85 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
           distanceGoal: mappedProfile.goals?.distanceGoal || 5.0
         });
         setTempName(mappedProfile.name);
-        setTempAvatar(mappedProfile.avatarUrl);
+        setUserPhotoUrl(mappedProfile.avatarUrl === DEFAULT_AVATAR ? null : mappedProfile.avatarUrl);
       }
     } catch (e: any) {
-      console.error("Profile Fetch Error:", e);
-      setSnackBar({ show: true, message: "Sync error. Check connection.", type: 'error' });
+      console.error("Critical Profile Fetch Error:", e.message || e);
+      if (isMounted) {
+        setSnackBar({ show: true, message: "Sync error. Check connection.", type: 'error' });
+      }
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      // THIS IS THE FIX: Always turn off the spinner, even on failure
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchProfileData();
-  }, []);
+    let isMounted = true;
+    fetchProfileData(isMounted);
+
+    // REALTIME SUBSCRIPTION FOR CROSS-DEVICE SYNC
+    if (!currentUser?.id) return;
+
+    const subscription = supabase
+      .channel(`profile-sync-${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${currentUser.id}`
+        },
+        (payload) => {
+          if (!isMounted) return;
+          console.log("Profile update received from another device!", payload.new);
+          
+          const { mappedProfile, metrics } = mapDatabaseProfileToState(payload.new);
+
+          // Update core states
+          setProfile(mappedProfile);
+          setDbMetrics(metrics);
+          setUserPhotoUrl(mappedProfile.avatarUrl === DEFAULT_AVATAR ? null : mappedProfile.avatarUrl);
+          
+          // Update UI states if not currently editing to avoid overwriting user input
+          // We use a functional update or check the current state
+          setIsEditing(currentEditing => {
+            if (!currentEditing) {
+              setTempMetrics(metrics);
+              setTempName(mappedProfile.name);
+              setTempGoals({
+                stepGoal: mappedProfile.goals?.stepGoal || 10000,
+                calorieGoal: mappedProfile.goals?.calorieGoal || 2000,
+                distanceGoal: mappedProfile.goals?.distanceGoal || 5.0
+              });
+            }
+            return currentEditing;
+          });
+
+          // Notify parent components if necessary
+          onUpdateMetrics(metrics);
+          if (onUpdateProfile) {
+            onUpdateProfile(mappedProfile);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { 
+      isMounted = false; 
+      supabase.removeChannel(subscription);
+    }; 
+  }, [currentUser?.id]);
 
   // --- ACTIONS ---
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!currentUser?.id) return;
 
       // Update both table columns and the jsonb metrics object for maximum safety
       const updatedMetrics = { 
@@ -125,9 +218,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
       };
 
       // Consolidated call with extreme debugging enabled in service
-      await updateProfile(user.id, { 
+      await updateProfile(currentUser.id, { 
         name: tempName, 
-        avatarUrl: tempAvatar,
+        avatarUrl: userPhotoUrl || DEFAULT_AVATAR,
         metrics: updatedMetrics,
         goals: tempGoals
       });
@@ -137,7 +230,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
         onUpdateProfile({
           ...profile,
           name: tempName,
-          avatarUrl: tempAvatar,
+          avatarUrl: userPhotoUrl || DEFAULT_AVATAR,
           metrics: updatedMetrics,
           goals: tempGoals
         });
@@ -179,6 +272,64 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
     }
   };
 
+  const handleRemovePhoto = async () => {
+    try {
+      if (!currentUser?.id) return;
+      
+      await deleteProfilePhoto(currentUser.id);
+      await updateProfile(currentUser.id, { avatarUrl: DEFAULT_AVATAR });
+      setUserPhotoUrl(null);
+      
+      if (onUpdateProfile && profile) {
+        onUpdateProfile({ ...profile, avatarUrl: DEFAULT_AVATAR });
+      }
+      setSnackBar({ show: true, message: "Profile photo removed.", type: 'success' });
+    } catch (e) {
+      console.error("Remove Photo Error:", e);
+      setSnackBar({ show: true, message: "Failed to remove photo.", type: 'error' });
+    }
+  };
+
+  const handleSavePhoto = async () => {
+    if (!editorRef.current) return;
+    setIsUploadingPhoto(true);
+    try {
+      if (!currentUser?.id) return;
+
+      const originalCanvas = editorRef.current.getImageScaledToCanvas();
+      
+      // Apply filters to canvas before uploading
+      const canvas = document.createElement('canvas');
+      canvas.width = originalCanvas.width;
+      canvas.height = originalCanvas.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.filter = `brightness(${editorBrightness}%) contrast(${editorContrast}%) saturate(${editorSaturation}%)`;
+        ctx.drawImage(originalCanvas, 0, 0);
+      }
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!blob) throw new Error("Canvas is empty");
+      
+      const url = await uploadProfilePhoto(currentUser.id, blob);
+      setUserPhotoUrl(url);
+      await updateProfile(currentUser.id, { avatarUrl: url });
+      
+      if (onUpdateProfile && profile) {
+        onUpdateProfile({ ...profile, avatarUrl: url });
+      }
+      
+      setIsEditorOpen(false);
+      setSelectedPhoto(null);
+      setSnackBar({ show: true, message: "Profile photo updated.", type: 'success' });
+      setIsUploadingPhoto(false);
+    } catch (e) {
+      console.error("Save Photo Error:", e);
+      setSnackBar({ show: true, message: "Failed to save photo.", type: 'error' });
+      setIsUploadingPhoto(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center bg-black">
@@ -188,7 +339,25 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
     );
   }
 
-  if (!profile || !dbMetrics) return null;
+  if (!profile || !dbMetrics) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center bg-black p-8 text-center">
+        <div className="w-20 h-20 rounded-full bg-luxury-neon/10 flex items-center justify-center mb-6 border border-luxury-neon/20">
+          <User className="text-luxury-neon" size={40} />
+        </div>
+        <h2 className="text-xl font-black text-white uppercase tracking-tight mb-2">Profile Not Found</h2>
+        <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest leading-relaxed mb-8 max-w-xs">
+          We couldn't retrieve your identity records. Please try refreshing or complete your setup.
+        </p>
+        <button 
+          onClick={() => fetchProfileData()} 
+          className="px-8 py-4 bg-luxury-neon rounded-2xl text-black font-black text-xs uppercase tracking-widest flex items-center gap-2"
+        >
+          <RefreshCw size={16} /> Retry Sync
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full flex flex-col bg-black overflow-y-auto no-scrollbar pb-[calc(10rem+env(safe-area-inset-bottom))] relative">
@@ -217,13 +386,85 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
                 <p className="text-xs font-bold">{snackBar.message}</p>
             </motion.div>
         )}
+
+        {isEditorOpen && selectedPhoto && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-md glass-card p-6 rounded-3xl border border-white/10 flex flex-col items-center">
+              <div className="w-full flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-white uppercase tracking-tight">Edit Photo</h3>
+                <button onClick={() => { setIsEditorOpen(false); setSelectedPhoto(null); }} className="text-gray-400 hover:text-white transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="relative w-full flex justify-center mb-6 overflow-hidden rounded-xl bg-black/50" style={{ filter: `brightness(${editorBrightness}%) contrast(${editorContrast}%) saturate(${editorSaturation}%)` }}>
+                <AvatarEditor
+                  ref={editorRef}
+                  image={selectedPhoto}
+                  width={250}
+                  height={250}
+                  border={20}
+                  borderRadius={125} // Circular mask
+                  color={[0, 0, 0, 0.8]} // RGBA
+                  scale={editorScale}
+                  rotate={editorRotate}
+                />
+              </div>
+
+              <div className="w-full space-y-4 mb-8">
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    <span>Zoom</span>
+                    <span>{Math.round(editorScale * 100)}%</span>
+                  </div>
+                  <input type="range" min="1" max="3" step="0.01" value={editorScale} onChange={(e) => setEditorScale(parseFloat(e.target.value))} className="w-full accent-luxury-neon" />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    <span>Brightness</span>
+                    <span>{editorBrightness}%</span>
+                  </div>
+                  <input type="range" min="50" max="150" value={editorBrightness} onChange={(e) => setEditorBrightness(parseInt(e.target.value))} className="w-full accent-luxury-neon" />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    <span>Contrast</span>
+                    <span>{editorContrast}%</span>
+                  </div>
+                  <input type="range" min="50" max="150" value={editorContrast} onChange={(e) => setEditorContrast(parseInt(e.target.value))} className="w-full accent-luxury-neon" />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    <span>Saturation</span>
+                    <span>{editorSaturation}%</span>
+                  </div>
+                  <input type="range" min="0" max="200" value={editorSaturation} onChange={(e) => setEditorSaturation(parseInt(e.target.value))} className="w-full accent-luxury-neon" />
+                </div>
+
+                <div className="flex justify-center mt-2">
+                  <button onClick={() => setEditorRotate((prev) => (prev + 90) % 360)} className="p-3 rounded-full bg-white/5 text-white hover:bg-white/10 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+                    <RotateCw size={16} /> Rotate 90°
+                  </button>
+                </div>
+              </div>
+
+              <button onClick={handleSavePhoto} disabled={isUploadingPhoto} className="w-full py-4 bg-luxury-neon rounded-2xl text-black font-black text-xs uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2">
+                {isUploadingPhoto ? <Loader2 size={16} className="animate-spin" /> : "Save Photo"}
+              </button>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <input type="file" ref={fileInputRef} onChange={(e) => {
         if (e.target.files?.[0]) {
-          const reader = new FileReader();
-          reader.onload = (ev) => setTempAvatar(ev.target?.result as string);
-          reader.readAsDataURL(e.target.files[0]);
+          setSelectedPhoto(e.target.files[0]);
+          setIsEditorOpen(true);
+          // Reset file input so the same file can be selected again if needed
+          e.target.value = '';
         }
       }} className="hidden" accept="image/*" />
 
@@ -233,9 +474,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
         <div className="relative z-10 flex flex-col items-center">
           <div onClick={() => isEditing && fileInputRef.current?.click()} className="relative cursor-pointer group">
             <div className={`absolute -inset-1 rounded-full blur opacity-30 transition duration-1000 ${isEditing ? 'bg-luxury-neon animate-pulse' : 'bg-white/10'}`}></div>
-            <img src={tempAvatar} className={`relative w-32 h-32 rounded-full border-4 bg-black object-cover transition-all ${isEditing ? 'border-luxury-neon scale-105 shadow-[0_0_25px_rgba(206,242,69,0.3)]' : 'border-white/10'}`} alt="Avatar" />
+            <img src={userPhotoUrl || DEFAULT_AVATAR} className={`relative w-32 h-32 rounded-full border-4 bg-black object-cover transition-all ${isEditing ? 'border-luxury-neon scale-105 shadow-[0_0_25px_rgba(206,242,69,0.3)]' : 'border-white/10'}`} alt="Avatar" />
             {isEditing && <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center"><Camera size={24} className="text-luxury-neon" /></div>}
           </div>
+
+          {isEditing && userPhotoUrl && (
+            <button onClick={handleRemovePhoto} className="mt-4 text-red-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 hover:text-red-400 transition-colors">
+              <Trash2 size={12} /> Remove Photo
+            </button>
+          )}
 
           <div className="mt-6 flex flex-col items-center gap-2">
             {isEditing ? (
@@ -256,7 +503,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onUpdateMetrics, onUpdate
            </button>
         ) : (
            <div className="flex gap-4">
-             <button onClick={() => { setIsEditing(false); setTempMetrics(dbMetrics); setTempName(profile.name); setTempAvatar(profile.avatarUrl); }} className="px-6 py-3 rounded-full bg-white/5 text-white text-[10px] font-black uppercase tracking-[0.2em]">Cancel</button>
+             <button onClick={() => { setIsEditing(false); setTempMetrics(dbMetrics); setTempName(profile.name); setUserPhotoUrl(profile.avatarUrl === DEFAULT_AVATAR ? null : profile.avatarUrl); }} className="px-6 py-3 rounded-full bg-white/5 text-white text-[10px] font-black uppercase tracking-[0.2em]">Cancel</button>
              <button onClick={handleSave} disabled={isSaving} className="px-8 py-3 rounded-full bg-luxury-neon text-black text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-luxury-neon/20 flex items-center gap-2">
                {isSaving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14} />} Save Sync
              </button>

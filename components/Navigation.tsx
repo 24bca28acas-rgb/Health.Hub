@@ -14,7 +14,6 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, setView }) => {
     { id: ViewState.DASHBOARD, icon: Activity, label: 'Home' },
     { id: ViewState.FOOD_LENS, icon: Camera, label: 'Lens' },
     { id: ViewState.MAP_TRACKER, icon: NavIcon, label: 'Track' },
-    { id: ViewState.WORKOUT_LAB, icon: Dumbbell, label: 'Lab' },
     { id: ViewState.CHAT, icon: MessageSquare, label: 'Coach' },
     { id: ViewState.PROFILE, icon: User, label: 'Me' },
   ];

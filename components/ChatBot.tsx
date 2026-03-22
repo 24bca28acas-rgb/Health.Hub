@@ -37,7 +37,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets })
            const history = await fetchChatHistory(user.id);
            setMessages(history.map(h => ({
                id: h.id, 
-               role: h.isUserMessage ? 'user' : 'model', 
+               role: (h.isUserMessage ? 'user' : 'model') as 'user' | 'model', 
                text: h.message, 
                timestamp: new Date(h.createdAt).getTime(),
                 planData: h.planData
@@ -106,6 +106,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets })
     try {
       const historyContext: Content[] = messages
         .slice(-10)
+        .filter(h => h.text && h.text.trim() !== '')
         .map(h => ({
           role: h.role,
           parts: [{ text: h.text }]
@@ -121,13 +122,24 @@ const ChatBot: React.FC<ChatBotProps> = ({ profile, activity, onUpdateTargets })
       
       const coachId = (Date.now() + 1).toString();
       let coachText = '';
+      let hasStartedTyping = false;
       
       setMessages(prev => [...prev, { id: coachId, role: 'model', text: '', timestamp: Date.now() }]);
-      setIsThinking(false);
 
       for await (const chunk of stream) {
-        coachText += chunk.text || '';
-        setMessages(prev => prev.map(m => m.id === coachId ? { ...m, text: coachText } : m));
+        const text = chunk.text || '';
+        if (text && !hasStartedTyping) {
+          hasStartedTyping = true;
+          setIsThinking(false);
+        }
+        coachText += text;
+        if (text) {
+          setMessages(prev => prev.map(m => m.id === coachId ? { ...m, text: coachText } : m));
+        }
+      }
+      
+      if (!hasStartedTyping) {
+        setIsThinking(false);
       }
 
       // Sync Protocol Logic (Plan detection)

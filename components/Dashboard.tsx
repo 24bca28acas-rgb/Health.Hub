@@ -1,13 +1,12 @@
 
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ActivityData, FoodHistoryItem } from '../types';
 import { Flame, Target, Sparkles, Play, Pause, Plus, Droplets, Zap, Footprints, Settings2, Check, Pencil, Route } from 'lucide-react';
 import StreakWidget from './StreakWidget';
 import StreakHistory from './StreakHistory';
-import { supabase } from '../services/storage';
+import { supabase, updateProfile } from '../services/storage';
 import { getFastHealthTip } from '../services/geminiService';
-import { useDailyActivityData } from '../contexts/DailyActivityContext';
 import Logo from './Logo';
 import { ActivityLogger } from './ActivityLogger';
 import GlowingButton from './GlowingButton';
@@ -25,28 +24,70 @@ interface DashboardProps {
   onToggleAdaptiveGoals: (enabled: boolean) => void;
   userWeight?: number;
   profile?: any;
+  onUpdateProfile?: (profile: any) => void;
+  onUpdateOptimistically?: (updates: any) => void;
 }
 
 const ConcentricHUD: React.FC<{
   stepsProgress: number;
   caloriesProgress: number;
-  hydrationProgress: number;
-  primaryValue: string;
-  primaryLabel: string;
-  goalLabel: string;
-}> = ({ stepsProgress, caloriesProgress, hydrationProgress, primaryValue, primaryLabel, goalLabel }) => {
+  intakeProgress: number;
+  data: ActivityData;
+}> = ({ stepsProgress, caloriesProgress, intakeProgress, data }) => {
+  const [activeMetric, setActiveMetric] = useState<'intake' | 'steps' | 'burn'>('intake');
+  const metrics = ['intake', 'steps', 'burn'] as const;
+
+  const handleCycle = () => {
+    const currentIndex = metrics.indexOf(activeMetric);
+    const nextIndex = (currentIndex + 1) % metrics.length;
+    setActiveMetric(metrics[nextIndex]);
+  };
+
+  const getMetricDetails = () => {
+    switch (activeMetric) {
+      case 'intake':
+        return {
+          value: Math.floor(data.caloriesConsumed).toLocaleString(),
+          label: "CALORIE INTAKE",
+          goal: `OUT OF ${data.calorieGoal.toLocaleString()} GOAL`,
+          color: '#3B82F6'
+        };
+      case 'steps':
+        return {
+          value: (data.steps || 0).toLocaleString(),
+          label: "STEPS TRACKED",
+          goal: `OUT OF ${data.stepGoal.toLocaleString()} GOAL`,
+          color: '#F59E0B'
+        };
+      case 'burn':
+        return {
+          value: Math.floor(data.calories).toLocaleString(),
+          label: "CALORIC BURN",
+          goal: `OUT OF ${data.calorieGoal.toLocaleString()} GOAL`,
+          color: '#CCFF00'
+        };
+    }
+  };
+
+  const { value, label, goal } = getMetricDetails();
   const size = 320;
   const center = size / 2;
   const strokeWidth = 12;
 
   const rings = [
-    { progress: caloriesProgress, color: '#CCFF00', radius: 140 }, // Outer: Calories
-    { progress: stepsProgress, color: '#F59E0B', radius: 120 },    // Middle: Steps
-    { progress: hydrationProgress, color: '#06B6D4', radius: 100 }, // Inner: Hydration
+    { id: 'intake', progress: intakeProgress, color: '#3B82F6', radius: 140 },   // Outer: Intake (Blue)
+    { id: 'burn', progress: caloriesProgress, color: '#CCFF00', radius: 120 }, // Middle: Calories Burned (Neon)
+    { id: 'steps', progress: stepsProgress, color: '#F59E0B', radius: 100 },    // Inner: Steps (Orange)
   ];
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+    <motion.div 
+      onClick={handleCycle}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      className="relative flex items-center justify-center cursor-pointer group" 
+      style={{ width: size, height: size }}
+    >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 overflow-visible">
         <defs>
           <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
@@ -56,11 +97,12 @@ const ConcentricHUD: React.FC<{
         </defs>
         
         {rings.map((ring, i) => {
+          const isActive = activeMetric === ring.id;
           const circumference = 2 * Math.PI * ring.radius;
           const offset = circumference - (Math.min(100, ring.progress) / 100) * circumference;
           
           return (
-            <g key={i}>
+            <g key={ring.id}>
               {/* Background Track */}
               <circle 
                 cx={center} cy={center} r={ring.radius} 
@@ -70,14 +112,19 @@ const ConcentricHUD: React.FC<{
               {/* Active Progress Arc */}
               <motion.circle 
                 cx={center} cy={center} r={ring.radius} 
-                stroke={ring.color} strokeWidth={strokeWidth} 
+                stroke={ring.color} 
+                strokeWidth={isActive ? strokeWidth + 4 : strokeWidth} 
                 fill="transparent" 
                 strokeDasharray={circumference} 
                 initial={{ strokeDashoffset: circumference }} 
-                animate={{ strokeDashoffset: offset }} 
-                transition={{ duration: 1.5, ease: "easeOut", delay: i * 0.2 }}
+                animate={{ 
+                  strokeDashoffset: offset,
+                  opacity: isActive ? 1 : 0.3,
+                  strokeWidth: isActive ? strokeWidth + 4 : strokeWidth
+                }} 
+                transition={{ duration: 1, ease: "easeInOut" }}
                 strokeLinecap="round" 
-                style={{ filter: `drop-shadow(0 0 8px ${ring.color}44)` }}
+                style={{ filter: isActive ? `drop-shadow(0 0 12px ${ring.color}66)` : 'none' }}
               />
             </g>
           );
@@ -85,19 +132,23 @@ const ConcentricHUD: React.FC<{
       </svg>
       
       {/* Central Metrics Core */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }} 
-          animate={{ opacity: 1, y: 0 }} 
-          transition={{ delay: 0.8 }}
-          className="flex flex-col items-center"
-        >
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-1">{primaryLabel}</span>
-          <h2 className="text-6xl font-black text-white tracking-tighter leading-none">{primaryValue}</h2>
-          <span className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mt-3">{goalLabel}</span>
-        </motion.div>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={activeMetric}
+            initial={{ opacity: 0, y: 10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="flex flex-col items-center"
+          >
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-1">{label}</span>
+            <h2 className="text-6xl font-black text-white tracking-tighter leading-none">{value}</h2>
+            <span className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mt-3">{goal}</span>
+          </motion.div>
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -123,163 +174,36 @@ const ProgressBar: React.FC<{ label: string; value: React.ReactNode; progress: n
 );
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-  data, onToggleTracking, isTracking: isTrackingProp, onUpdateGoals, onRefresh, foodHistory = [], streakValue = 0, activityHistory = [], userWeight = 70, profile: initialProfile
+  data, onToggleTracking, isTracking, onUpdateGoals, onRefresh, foodHistory = [], streakValue = 0, activityHistory = [], userWeight = 70, profile: initialProfile, onUpdateProfile, onUpdateOptimistically
 }) => {
-  const { 
-    steps, 
-    calories, 
-    distance, 
-    hydration, 
-    hydrationGoal, 
-    stepGoal, 
-    isTracking, 
-    toggleTracking, 
-    refresh, 
-    updateOptimistically 
-  } = useDailyActivityData();
-
   const [showHistory, setShowHistory] = useState(false);
   const [showActivityLogger, setShowActivityLogger] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [aiTip, setAiTip] = useState<string>("Initializing Neural Insights...");
   const [isProfileIncomplete, setIsProfileIncomplete] = useState(false);
+  const [customIntake, setCustomIntake] = useState('');
+  const [isLogging, setIsLogging] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
-  const [isManualHydration, setIsManualHydration] = useState(false);
-  const [manualHydrationValue, setManualHydrationValue] = useState("");
   const [editedGoals, setEditedGoals] = useState({
-    stepGoal: stepGoal,
-    hydrationGoal: hydrationGoal,
+    stepGoal: initialProfile?.goals?.stepGoal || 10000,
     calorieGoal: data.calorieGoal
   });
-
-  const addHydration = async (amountL: number) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
-    
-    const userId = session.user.id;
-    const today = new Date().toLocaleDateString('en-CA');
-    const optimisticNewTotal = parseFloat((hydration + amountL).toFixed(2));
-
-    // 1. Optimistic Update
-    updateOptimistically({ hydration: optimisticNewTotal });
-
-    try {
-      // 2. Fetch First (Safest Route)
-      const { data: currentData } = await supabase
-        .from('daily_activity')
-        .select('hydration')
-        .eq('user_id', userId)
-        .eq('date', today)
-        .maybeSingle();
-
-      const currentHydration = currentData?.hydration || 0;
-      const newTotal = parseFloat((currentHydration + amountL).toFixed(2));
-
-      // 3. Upsert
-      const { error } = await supabase
-        .from('daily_activity')
-        .upsert({
-          user_id: userId,
-          date: today,
-          hydration: newTotal,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,date' });
-
-      if (error) throw error;
-      
-      // Sync local state with actual total if different
-      if (newTotal !== optimisticNewTotal) {
-        updateOptimistically({ hydration: newTotal });
-      }
-    } catch (e) {
-      console.error("Hydration sync failed:", e);
-      // Revert on failure
-      updateOptimistically({ hydration: hydration });
-      alert("Failed to sync hydration. Please try again.");
-    }
-  };
-
-  const handleManualHydrationSubmit = async () => {
-    const val = parseFloat(manualHydrationValue);
-    if (isNaN(val)) return;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
-
-    const userId = session.user.id;
-    const today = new Date().toLocaleDateString('en-CA');
-
-    // Optimistic Update
-    updateOptimistically({ hydration: val });
-    setIsManualHydration(false);
-    setManualHydrationValue("");
-
-    try {
-      const { error } = await supabase
-        .from('daily_activity')
-        .upsert({
-          user_id: userId,
-          date: today,
-          hydration: val,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,date' });
-
-      if (error) throw error;
-    } catch (e) {
-      console.error("Manual hydration sync failed:", e);
-      updateOptimistically({ hydration: hydration });
-      alert("Failed to sync hydration. Please try again.");
-    }
-  };
-
-  // Hydration Reminder System
-  useEffect(() => {
-    if (typeof window !== 'undefined' && "Notification" in window) {
-      if (Notification.permission === "default") {
-        Notification.requestPermission();
-      }
-    }
-
-    const checkHydration = () => {
-      const remaining = hydrationGoal - hydration;
-      if (remaining > 0) {
-        if (typeof window !== 'undefined' && "Notification" in window && Notification.permission === "granted") {
-          new Notification("Hydration Protocol", {
-            body: `Time to hydrate! You need ${remaining.toFixed(1)} Liters more to reach your daily target.`,
-          });
-        } else {
-          // Fallback or premium toast logic could go here
-          console.log(`Hydration Protocol: You need ${remaining.toFixed(1)}L more.`);
-        }
-      }
-    };
-
-    // Set interval for 1 hour (3,600,000 ms)
-    const intervalId = setInterval(checkHydration, 3600000);
-
-    // Developer Testing Mode (10 seconds)
-    // const intervalId = setInterval(checkHydration, 10000);
-
-    return () => clearInterval(intervalId);
-  }, [hydration, hydrationGoal]);
 
   useEffect(() => {
     if (!isEditing) {
       setEditedGoals({
-        stepGoal: data.stepGoal,
-        hydrationGoal: hydrationGoal,
+        stepGoal: initialProfile?.goals?.stepGoal || 10000,
         calorieGoal: data.calorieGoal
       });
     }
-  }, [data.stepGoal, data.calorieGoal, hydrationGoal, isEditing]);
+  }, [initialProfile?.goals?.stepGoal, data.calorieGoal, isEditing]);
 
   const handleSaveGoals = async () => {
     onUpdateGoals({
       stepGoal: editedGoals.stepGoal,
       calorieGoal: editedGoals.calorieGoal
     });
-    updateOptimistically({ hydrationGoal: editedGoals.hydrationGoal });
     setIsEditing(false);
 
     // SUPABASE INTEGRATION HOOK:
@@ -302,22 +226,76 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: authData }) => { 
-      if (authData.user) {
-        setUserId(authData.user.id);
-        const { data: profile } = await supabase.from('profiles').select('name, metrics').eq('id', authData.user.id).maybeSingle();
-        if (!profile || !profile.name || profile.name === 'Elite Member' || profile.name === 'Elite User' || !profile.metrics?.dob) {
-          setIsProfileIncomplete(true);
+    if (!userId) {
+      supabase.auth.getUser().then(async ({ data: authData }) => { 
+        if (authData.user) {
+          setUserId(authData.user.id);
+          const { data: profile } = await supabase.from('profiles').select('name, metrics').eq('id', authData.user.id).maybeSingle();
+          if (!profile || !profile.name || profile.name === 'Elite Member' || profile.name === 'Elite User' || !profile.metrics?.dob) {
+            setIsProfileIncomplete(true);
+          }
         }
-      }
-    });
+      }).catch(err => console.error("Failed to fetch user:", err));
+    }
     
     const context = initialProfile ? 
       `${initialProfile.metrics?.height}cm, ${initialProfile.metrics?.weight}kg, ${initialProfile.metrics?.fitnessGoal}` : 
       "175cm, 70kg, Active";
       
-    getFastHealthTip(`Steps: ${data.steps}, Goal: ${data.stepGoal}`, context).then(setAiTip);
-  }, [data.steps, initialProfile]);
+    getFastHealthTip(`Steps: ${data.steps}, Goal: ${data.stepGoal}`, context)
+      .then(setAiTip)
+      .catch((err) => {
+        console.error("Failed to fetch AI tip:", err);
+        setAiTip("Optimizing performance...");
+      });
+  }, [data.steps, initialProfile, userId]);
+
+  const todayKey = new Date().toLocaleDateString('en-CA');
+  const isOverLimit = data.caloriesConsumed > data.calorieGoal;
+  const excessCalories = Math.max(0, data.caloriesConsumed - data.calorieGoal);
+
+  useEffect(() => {
+    if (!initialProfile || !userId) return;
+
+    if (initialProfile.lastPenaltyCalculationDate === todayKey) {
+      return;
+    }
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = yesterday.toLocaleDateString('en-CA');
+
+    const yesterdayActivity = activityHistory.find(a => a.activityDate === yesterdayKey);
+    const yesterdayIntake = yesterdayActivity?.caloriesConsumed || 0;
+
+    const yesterdayGoal = initialProfile.goals?.calorieGoal || 2000;
+    const yesterdayBurn = yesterdayActivity?.caloriesBurned || 0;
+
+    const yesterdayNet = yesterdayIntake - yesterdayGoal - yesterdayBurn;
+    const newPenaltySteps = yesterdayNet > 0 ? Math.floor(yesterdayNet * 25) : 0;
+
+    const previousPenalty = initialProfile.penaltySteps || 0;
+    const yesterdaySteps = yesterdayActivity?.steps || 0;
+    const yesterdayBaseStepGoal = initialProfile.goals?.stepGoal || 10000;
+    
+    const stepsAboveBase = Math.max(0, yesterdaySteps - yesterdayBaseStepGoal);
+    const unburnedPenalty = Math.max(0, previousPenalty - stepsAboveBase);
+
+    const totalPenaltySteps = unburnedPenalty + newPenaltySteps;
+
+    const updatePenalty = async () => {
+      const updates = {
+        penaltySteps: totalPenaltySteps,
+        lastPenaltyCalculationDate: todayKey
+      };
+      await updateProfile(userId, updates);
+      if (onUpdateProfile) {
+        onUpdateProfile({ ...initialProfile, ...updates });
+      }
+    };
+
+    updatePenalty().catch(err => console.error("Failed to update penalty:", err));
+  }, [initialProfile, userId, activityHistory, foodHistory, todayKey, onUpdateProfile]);
 
   if (isProfileIncomplete) {
     return (
@@ -337,10 +315,33 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }
 
-  const caloriesConsumed = foodHistory.reduce((acc, item) => acc + (item.analysis?.macros?.calories || 0), 0);
+  const handleLogIntake = async (amount: number) => {
+    if (!userId || !onUpdateOptimistically) return;
+    
+    const previousTotal = data.caloriesConsumed;
+    const newTotal = previousTotal + amount;
+    
+    // 1. Optimistic Update
+    onUpdateOptimistically({ caloriesConsumed: newTotal });
+    setIsLogging(true);
+
+    try {
+      const { logCalorieIntake } = await import('../services/storage');
+      await logCalorieIntake(userId, amount);
+    } catch (error) {
+      console.error("Failed to log intake:", error);
+      // 2. Revert on Error
+      onUpdateOptimistically({ caloriesConsumed: previousTotal });
+      alert("Failed to sync calorie intake. Please try again.");
+    } finally {
+      setIsLogging(false);
+      setCustomIntake('');
+    }
+  };
+
   const activeCaloriesProgress = (data.calories / data.calorieGoal) * 100;
   const stepsProgress = (data.steps / data.stepGoal) * 100;
-  const hydrationProgress = (hydration / hydrationGoal) * 100;
+  const intakeProgress = (data.caloriesConsumed / data.calorieGoal) * 100;
 
   return (
     <div className="h-full w-full overflow-y-auto no-scrollbar p-6 space-y-8 pb-32 bg-[#050505]">
@@ -376,10 +377,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         <ConcentricHUD 
           caloriesProgress={activeCaloriesProgress}
           stepsProgress={stepsProgress}
-          hydrationProgress={hydrationProgress}
-          primaryValue={Math.floor(data.calories).toLocaleString()}
-          primaryLabel="ACTIVE KCAL"
-          goalLabel={`OUT OF ${data.calorieGoal.toLocaleString()} GOAL`}
+          intakeProgress={intakeProgress}
+          data={data}
         />
         
         <motion.button
@@ -419,7 +418,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           
           <div className="space-y-6">
             <ProgressBar 
-              label="Active Steps" 
+              label={initialProfile?.penaltySteps ? `Active Steps (+${initialProfile.penaltySteps} Penalty)` : "Active Steps"} 
               value={isEditing ? (
                 <div className="flex items-center gap-1">
                   <input 
@@ -428,78 +427,13 @@ const Dashboard: React.FC<DashboardProps> = ({
                     onChange={(e) => setEditedGoals(prev => ({ ...prev, stepGoal: parseInt(e.target.value) || 0 }))}
                     className="w-16 bg-transparent border-b border-[#CCFF00]/50 text-right outline-none text-luxury-neon"
                   />
+                  {initialProfile?.penaltySteps > 0 && <span className="text-red-400 text-[10px] ml-1">+{initialProfile.penaltySteps}</span>}
                 </div>
               ) : `${data.steps.toLocaleString()} / ${data.stepGoal.toLocaleString()}`} 
               progress={stepsProgress} 
-              color="#F59E0B" 
+              color={initialProfile?.penaltySteps > 0 ? "#EF4444" : "#F59E0B"} 
               icon={<Footprints size={14} />}
             />
-            <div className="space-y-3">
-              <ProgressBar 
-                label="Hydration Level" 
-                value={isEditing ? (
-                  <div className="flex items-center gap-1">
-                    <input 
-                      type="number" 
-                      step="0.1"
-                      value={editedGoals.hydrationGoal}
-                      onChange={(e) => setEditedGoals(prev => ({ ...prev, hydrationGoal: parseFloat(e.target.value) || 0 }))}
-                      className="w-12 bg-transparent border-b border-[#CCFF00]/50 text-right outline-none text-luxury-neon"
-                    />
-                    <span className="text-gray-500">L</span>
-                  </div>
-                ) : `${hydration}L / ${hydrationGoal}L`} 
-                progress={hydrationProgress} 
-                color="#06B6D4" 
-                icon={<Droplets size={14} />}
-              />
-              {!isEditing && (
-                <div className="flex items-center gap-2 pl-10">
-                  {isManualHydration ? (
-                    <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1">
-                      <input 
-                        type="number" 
-                        step="0.1"
-                        autoFocus
-                        value={manualHydrationValue}
-                        onChange={(e) => setManualHydrationValue(e.target.value)}
-                        placeholder="0.0"
-                        className="w-12 bg-transparent outline-none text-[10px] font-bold text-luxury-neon"
-                        onKeyDown={(e) => e.key === 'Enter' && handleManualHydrationSubmit()}
-                      />
-                      <button onClick={handleManualHydrationSubmit} className="text-luxury-neon">
-                        <Check size={12} />
-                      </button>
-                      <button onClick={() => setIsManualHydration(false)} className="text-gray-500">
-                        <Plus size={12} className="rotate-45" />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <button 
-                        onClick={() => addHydration(0.25)}
-                        className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:border-[#CCFF00]/50 text-[10px] font-bold text-white transition-all active:scale-95"
-                      >
-                        + 250ml
-                      </button>
-                      <button 
-                        onClick={() => addHydration(0.5)}
-                        className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:border-[#CCFF00]/50 text-[10px] font-bold text-white transition-all active:scale-95"
-                      >
-                        + 500ml
-                      </button>
-                      <button 
-                        onClick={() => setIsManualHydration(true)}
-                        className="p-1.5 rounded-full bg-white/5 border border-white/10 hover:border-[#CCFF00]/50 text-gray-400 transition-all active:scale-95"
-                        title="Manual Entry"
-                      >
-                        <Pencil size={10} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
             <ProgressBar 
               label="Caloric Burn" 
               value={isEditing ? (
@@ -517,8 +451,42 @@ const Dashboard: React.FC<DashboardProps> = ({
               color="#CCFF00" 
               icon={<Zap size={14} />}
             />
+            <ProgressBar 
+              label="Calorie Intake" 
+              value={`${Math.floor(data.caloriesConsumed)} / ${data.calorieGoal} KCAL`} 
+              progress={intakeProgress} 
+              color={isOverLimit ? "#EF4444" : "#3B82F6"} 
+              icon={<Flame size={14} />}
+            />
           </div>
         </div>
+
+        {isOverLimit && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-panel p-6 rounded-[2.5rem] border border-red-500/30 bg-red-500/10 backdrop-blur-xl flex flex-col items-center text-center space-y-4"
+          >
+            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+              <Flame size={24} className="text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-white uppercase tracking-tighter">Limit Exceeded</h3>
+              <p className="text-sm text-red-200 mt-1">
+                Calorie Limit Exceeded by <span className="font-bold text-red-400">{Math.floor(excessCalories)} Kcal</span>.
+              </p>
+            </div>
+            <GlowingButton 
+              onClick={() => {
+                // In a real app, this would route to WorkoutLab or suggest a specific workout
+                alert(`Suggested Workout: ${Math.ceil(excessCalories / 10)} mins HIIT to burn ${Math.floor(excessCalories)} Kcal!`);
+              }} 
+              className="w-full py-3 bg-red-500 hover:bg-red-600 text-white border-none shadow-[0_0_20px_rgba(239,68,68,0.4)]"
+            >
+              Burn it now
+            </GlowingButton>
+          </motion.div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <motion.div 
@@ -546,6 +514,61 @@ const Dashboard: React.FC<DashboardProps> = ({
             <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest mt-1">Distance KM</span>
           </div>
         </div>
+
+        {/* Quick-Log Intake Card */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel p-8 rounded-[2.5rem] border border-white/5 bg-white/[0.02] backdrop-blur-xl space-y-6"
+        >
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+                <Flame size={20} />
+              </div>
+              <h3 className="text-xs font-black text-white uppercase tracking-[0.2em]">Calorie Intake</h3>
+            </div>
+            <div className="text-right">
+              <span className="text-2xl font-black text-white">{Math.floor(data.caloriesConsumed)}</span>
+              <span className="text-[10px] font-bold text-gray-500 ml-2 uppercase">KCAL</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            {[100, 300, 500].map((amount) => (
+              <motion.button
+                key={amount}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => handleLogIntake(amount)}
+                disabled={isLogging}
+                className="flex-1 py-3 rounded-2xl bg-white/5 border border-white/10 text-white font-black text-xs hover:bg-white/10 transition-colors disabled:opacity-50"
+              >
+                +{amount}
+              </motion.button>
+            ))}
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1 relative">
+              <input 
+                type="number" 
+                placeholder="Custom Amount..."
+                value={customIntake}
+                onChange={(e) => setCustomIntake(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder:text-gray-600 outline-none focus:border-blue-500/50 transition-colors"
+              />
+              <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-500 uppercase">KCAL</span>
+            </div>
+            <GlowingButton 
+              onClick={() => handleLogIntake(parseInt(customIntake) || 0)}
+              disabled={isLogging || !customIntake}
+              className="px-8 bg-blue-500 hover:bg-blue-600 text-white border-none shadow-[0_0_20px_rgba(59,130,246,0.3)]"
+            >
+              Log
+            </GlowingButton>
+          </div>
+        </motion.div>
       </div>
 
       <StreakWidget 

@@ -17,7 +17,6 @@ import MapTrackingScreen from './components/MapTrackingScreen';
 import ChatBot from './components/ChatBot';
 import ProfileScreen from './components/ProfileScreen';
 import OnboardingScreen from './components/OnboardingScreen'; 
-import WorkoutLab from './components/WorkoutLab';
 import Auth from './components/Auth';
 import { ViewState, ActivityData, FoodHistoryItem, UserMetrics } from './types';
 import useLocalStorage from './hooks/useLocalStorage';
@@ -36,19 +35,47 @@ const MainContent: React.FC<{
   currentView: ViewState;
   setCurrentView: any;
 }> = ({ session, userProfile, setUserProfile, foodHistory, setFoodHistory, bmiMetrics, setBmiMetrics, adaptiveGoalsEnabled, setAdaptiveGoalsEnabled, currentView, setCurrentView }) => {
-  const { steps, calories, distance, hydration, hydrationGoal, streak, history, isTracking, toggleTracking, refresh, isLoading: biometricLoading } = useDailyActivityData();
+  const { steps, calories, distance, hydration, hydrationGoal, caloriesConsumed, streak, history, isTracking, toggleTracking, refresh, isLoading: biometricLoading, updateOptimistically } = useDailyActivityData();
 
-  const handleAddToFoodHistory = (item: FoodHistoryItem) => {
+  const handleAddToFoodHistory = async (item: FoodHistoryItem) => {
     setFoodHistory((prev: FoodHistoryItem[]) => [item, ...prev].slice(0, 5));
+    
+    const calories = item.analysis?.macros?.calories || 0;
+    if (calories > 0) {
+      // Optimistic Update
+      updateOptimistically({ caloriesConsumed: caloriesConsumed + calories });
+      
+      // Persist to DB
+      try {
+        const { logCalorieIntake } = await import('./services/storage');
+        await logCalorieIntake(session.user.id || session.user.uid, calories);
+      } catch (error) {
+        console.error("Failed to log food calories to activity:", error);
+      }
+    }
   };
 
   if (biometricLoading) {
     return (
-      <div className="h-screen bg-black flex flex-col items-center justify-center">
+      <div className="h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
-        <p className="text-emerald-500 font-mono text-xs tracking-widest uppercase animate-pulse">
+        <p className="text-emerald-500 font-mono text-xs tracking-widest uppercase animate-pulse mb-2">
           Synchronizing Health Data...
         </p>
+        <p className="text-gray-500 text-[10px] uppercase tracking-widest max-w-xs">
+          Fetching your latest biometric records from the server
+        </p>
+        
+        {/* Force Bypass Button after 5 seconds */}
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 5 }}
+          onClick={() => updateOptimistically({})} // This doesn't set isLoading false, but we can add a way to bypass
+          className="mt-8 px-4 py-2 border border-white/10 rounded-full text-[10px] text-gray-500 uppercase tracking-widest hover:bg-white/5 transition-colors"
+        >
+          Skip Sync
+        </motion.button>
       </div>
     );
   }
@@ -58,7 +85,8 @@ const MainContent: React.FC<{
     calories,
     distance,
     hydration,
-    stepGoal: userProfile.goals?.stepGoal || 10000,
+    caloriesConsumed,
+    stepGoal: (userProfile.goals?.stepGoal || 10000) + (userProfile.penaltySteps || 0),
     calorieGoal: userProfile.goals?.calorieGoal || 2000,
     distanceGoal: 5.0,
     hydrationGoal,
@@ -80,7 +108,20 @@ const MainContent: React.FC<{
             <motion.div key="dash" {...pageTransition} className="h-full w-full">
               <Dashboard 
                 data={activityData} 
-                onUpdateGoals={() => {}} 
+                onUpdateGoals={async (newGoals) => {
+                  if (userProfile) {
+                    const updatedProfile = {
+                      ...userProfile,
+                      goals: {
+                        ...userProfile.goals,
+                        ...newGoals
+                      }
+                    };
+                    setUserProfile(updatedProfile);
+                    const { updateProfile } = await import('./services/storage');
+                    await updateProfile(session.user.id || session.user.uid, { goals: updatedProfile.goals });
+                  }
+                }} 
                 isTracking={isTracking} 
                 onToggleTracking={toggleTracking} 
                 onRefresh={refresh}
@@ -91,6 +132,8 @@ const MainContent: React.FC<{
                 activityHistory={history}
                 userWeight={bmiMetrics.weight}
                 profile={userProfile}
+                onUpdateProfile={setUserProfile}
+                onUpdateOptimistically={updateOptimistically}
               />
             </motion.div>
           )}
@@ -116,12 +159,7 @@ const MainContent: React.FC<{
           )}
           {currentView === ViewState.PROFILE && (
             <motion.div key="profile" {...pageTransition} className="h-full w-full">
-              <ProfileScreen onUpdateMetrics={setBmiMetrics} onUpdateProfile={setUserProfile} />
-            </motion.div>
-          )}
-          {currentView === ViewState.WORKOUT_LAB && (
-            <motion.div key="lab" {...pageTransition} className="h-full w-full">
-              <WorkoutLab metrics={userProfile.metrics} />
+              <ProfileScreen user={session.user} onUpdateMetrics={setBmiMetrics} onUpdateProfile={setUserProfile} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -148,6 +186,9 @@ const App: React.FC = () => {
 
     const fetchProfile = async (userId: string) => {
       console.log("1. Session ID:", userId);
+      if (userId.startsWith('guest_')) {
+        return { id: userId, name: 'Guest User', primary_goal: 'General Health' } as any;
+      }
       try {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
@@ -175,6 +216,14 @@ const App: React.FC = () => {
     };
 
     const initializeAuth = async () => {
+      // Safety timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        if (isMounted) {
+          console.warn("Auth initialization timed out, forcing loading state to false");
+          setIsAppLoading(false);
+        }
+      }, 8000);
+
       try {
         // 1. Fetch Initial Session
         const { data: { session: initialSession } } = await supabase.auth.getSession();
@@ -184,15 +233,20 @@ const App: React.FC = () => {
         if (!activeSession && guestActive) {
           const guestUser = getGuestUser();
           if (guestUser) {
-            activeSession = { user: guestUser };
+            activeSession = { user: guestUser } as any;
           }
         }
 
         if (activeSession?.user) {
           setSession(activeSession);
-          const userId = activeSession.user.id || activeSession.user.uid;
+          const userId = (activeSession.user as any).id;
           const profile = await fetchProfile(userId);
-          if (isMounted) setUserProfile(profile);
+          if (isMounted) {
+            setUserProfile(profile);
+            if (profile?.metrics) {
+              setBmiMetrics(profile.metrics);
+            }
+          }
         } else {
           if (isMounted) {
             setSession(null);
@@ -202,6 +256,7 @@ const App: React.FC = () => {
       } catch (e) {
         console.error("Auth initialization error:", e);
       } finally {
+        clearTimeout(timeoutId);
         if (isMounted) setIsAppLoading(false);
       }
     };
@@ -215,12 +270,12 @@ const App: React.FC = () => {
       
       if (!effectiveSession && guestActive) {
         const guestUser = getGuestUser();
-        if (guestUser) effectiveSession = { user: guestUser };
+        if (guestUser) effectiveSession = { user: guestUser } as any;
       }
 
       if (effectiveSession?.user) {
         setSession(effectiveSession);
-        const userId = effectiveSession.user.id || effectiveSession.user.uid;
+        const userId = (effectiveSession.user as any).id;
         const profile = await fetchProfile(userId);
         if (isMounted) setUserProfile(profile);
       } else {
@@ -240,13 +295,37 @@ const App: React.FC = () => {
   }, []);
 
   // 1. BLOCK EVERYTHING UNTIL LOADED
+  useEffect(() => {
+    if (isAppLoading) {
+      const timer = setTimeout(() => {
+        console.warn("Global App Initialization Timeout hit. Forcing bypass.");
+        setIsAppLoading(false);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [isAppLoading]);
+
   if (isAppLoading) {
     return (
-      <div className="h-screen bg-black flex flex-col items-center justify-center">
+      <div className="h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
-        <p className="text-emerald-500 font-mono text-xs tracking-widest uppercase animate-pulse">
+        <p className="text-emerald-500 font-mono text-xs tracking-widest uppercase animate-pulse mb-2">
           Initializing System...
         </p>
+        <p className="text-gray-500 text-[10px] uppercase tracking-widest max-w-xs">
+          Establishing secure connection to health network
+        </p>
+        
+        {/* Force Bypass Button after 5 seconds */}
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 5 }}
+          onClick={() => setIsAppLoading(false)}
+          className="mt-8 px-4 py-2 border border-white/10 rounded-full text-[10px] text-gray-500 uppercase tracking-widest hover:bg-white/5 transition-colors"
+        >
+          Force Bypass
+        </motion.button>
       </div>
     );
   }
@@ -286,7 +365,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <DailyActivityProvider userId={session.user.id || session.user.uid} stepGoal={userProfile.goals?.stepGoal || 10000}>
+    <DailyActivityProvider userId={session.user.id || session.user.uid} stepGoal={(userProfile.goals?.stepGoal || 10000) + (userProfile.penaltySteps || 0)}>
       <MainContent 
         session={session}
         userProfile={userProfile}

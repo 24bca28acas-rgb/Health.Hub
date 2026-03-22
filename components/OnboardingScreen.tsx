@@ -69,12 +69,18 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
   const handleBackToLogin = async () => {
     setIsLoggingOut(true);
     try {
-      // Logic: Signing out triggers onAuthStateChanged in App.tsx
-      // which swaps the view to Auth component (Navigator.pushAndRemoveUntil equivalent)
-      await signOut(); 
+      // 1. Attempt to kill session with a race condition to prevent hanging
+      // We don't want to wait forever if Supabase is unresponsive
+      await Promise.race([
+        signOut(),
+        new Promise(resolve => setTimeout(resolve, 3000))
+      ]);
     } catch (e) {
-      console.error("Logout failed", e);
-      setIsLoggingOut(false);
+      console.error("Logout process failed:", e);
+    } finally {
+      // 2. Force hard navigation to root to reset App.tsx state
+      // This is the ultimate fallback: it wipes React state and forces a fresh auth check
+      window.location.href = window.location.origin;
     }
   };
 
@@ -144,7 +150,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ user, onComplete })
         if (activityLevel === 'Sedentary') stepGoal = 6000;
 
         const activityGoals: ActivityData = {
-            steps: 0, calories: 0, distance: 0, hydration: 0, history: [],
+            steps: 0, calories: 0, distance: 0, hydration: 0, caloriesConsumed: 0, history: [],
             stepGoal: stepGoal,
             calorieGoal: Math.round(calorieTarget),
             distanceGoal: parseFloat((stepGoal * 0.000762).toFixed(1)),

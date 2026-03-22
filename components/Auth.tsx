@@ -144,9 +144,17 @@ const Auth: React.FC = () => {
     await new Promise(resolve => setTimeout(resolve, 500));
   };
 
-  const handleGuestMode = () => {
+  const handleGuestMode = async () => {
     setIsLoading(true);
-    signInAsGuest();
+    try {
+      await signInAsGuest();
+      // Force reload to trigger App.tsx initialization with guest session
+      window.location.href = window.location.origin;
+    } catch (e) {
+      console.error("Guest login failed:", e);
+      setError("Guest Protocol initialization failed.");
+      setIsLoading(false);
+    }
   };
 
   const handleResetPassword = async () => {

@@ -4,6 +4,7 @@ export interface ActivityData {
   calories: number;
   distance: number;
   hydration: number;
+  caloriesConsumed: number;
   stepGoal: number;
   calorieGoal: number;
   distanceGoal: number;
@@ -19,6 +20,7 @@ export interface DailyActivityDB {
   activityDate: string; // YYYY-MM-DD
   steps: number;
   caloriesBurned: number;
+  caloriesConsumed: number;
   distanceKm: number;
   hydration?: number;
   hydrationGoal?: number;
@@ -94,7 +96,6 @@ export enum ViewState {
   MAP_TRACKER = 'MAP_TRACKER',
   CHAT = 'CHAT',
   PROFILE = 'PROFILE',
-  WORKOUT_LAB = 'WORKOUT_LAB',
   ACTIVITY_LOG = 'ACTIVITY_LOG'
 }
 
@@ -141,10 +142,16 @@ export interface UserProfile {
     proteinGoal?: number;
   };
   currentStreak?: number; 
+  current_streak?: number; // Alias for DB compatibility
   currentPlanName?: string; 
   primary_goal?: string; // Added for routing evaluation
   lastActiveDate?: string;
+  last_active_date?: string; // Alias for DB compatibility
+  penaltySteps?: number;
+  lastPenaltyCalculationDate?: string;
   updatedAt?: string;
+  updated_at?: string; // Alias for DB compatibility
+  avatar_url?: string; // Alias for DB compatibility
 }
 
 export interface ChatMessage {
